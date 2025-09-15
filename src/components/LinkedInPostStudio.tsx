@@ -10,10 +10,23 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Download, Copy, Sparkles, Wand2, Image as ImageIcon, Eraser, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
+import { Download, Copy, Sparkles, Wand2, Image as ImageIcon, Eraser, AlignLeft, AlignCenter, AlignRight, Upload, X, Move } from "lucide-react";
 import * as htmlToImage from "html-to-image";
 
 // --- Utilities ---------------------------------------------------------------
+
+// Clamp utility function for value constraints
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+// Convert hex color to rgba with alpha
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 // Convert ASCII to styled Unicode variants (LinkedIn-safe fancy text)
 // Styles: bold, italic, boldItalic, monospace, serifBold
@@ -36,6 +49,46 @@ function toFancy(str: string, style = "bold") {
       if (code >= 97 && code <= 122 && r.a) return String.fromCodePoint(r.a + (code - 97));
       // 0-9
       if (code >= 48 && code <= 57 && r.d) return String.fromCodePoint(r.d + (code - 48));
+      return ch;
+    })
+    .join("");
+}
+
+// Convert styled Unicode characters back to normal ASCII
+function toNormal(str: string): string {
+  return Array.from(str)
+    .map((ch) => {
+      const code = ch.codePointAt(0)!;
+      
+      // Bold (Mathematical Alphanumeric Symbols)
+      // A-Z: 0x1D400-0x1D419
+      if (code >= 0x1D400 && code <= 0x1D419) return String.fromCharCode(65 + (code - 0x1D400));
+      // a-z: 0x1D41A-0x1D433
+      if (code >= 0x1D41A && code <= 0x1D433) return String.fromCharCode(97 + (code - 0x1D41A));
+      // 0-9: 0x1D7CE-0x1D7D7
+      if (code >= 0x1D7CE && code <= 0x1D7D7) return String.fromCharCode(48 + (code - 0x1D7CE));
+      
+      // Italic (Mathematical Alphanumeric Symbols)
+      // A-Z: 0x1D434-0x1D44D
+      if (code >= 0x1D434 && code <= 0x1D44D) return String.fromCharCode(65 + (code - 0x1D434));
+      // a-z: 0x1D44E-0x1D467
+      if (code >= 0x1D44E && code <= 0x1D467) return String.fromCharCode(97 + (code - 0x1D44E));
+      
+      // Bold Italic (Mathematical Alphanumeric Symbols)
+      // A-Z: 0x1D468-0x1D481
+      if (code >= 0x1D468 && code <= 0x1D481) return String.fromCharCode(65 + (code - 0x1D468));
+      // a-z: 0x1D482-0x1D49B
+      if (code >= 0x1D482 && code <= 0x1D49B) return String.fromCharCode(97 + (code - 0x1D482));
+      
+      // Monospace (Mathematical Alphanumeric Symbols)
+      // A-Z: 0x1D670-0x1D689
+      if (code >= 0x1D670 && code <= 0x1D689) return String.fromCharCode(65 + (code - 0x1D670));
+      // a-z: 0x1D68A-0x1D6A3
+      if (code >= 0x1D68A && code <= 0x1D6A3) return String.fromCharCode(97 + (code - 0x1D68A));
+      // 0-9: 0x1D7F6-0x1D7FF
+      if (code >= 0x1D7F6 && code <= 0x1D7FF) return String.fromCharCode(48 + (code - 0x1D7F6));
+      
+      // Return unchanged if not a styled Unicode character
       return ch;
     })
     .join("");
@@ -107,6 +160,10 @@ export default function LinkedInPostStudio() {
   const [prefix, setPrefix] = useState("");
   const [suffix, setSuffix] = useState("");
   const [template, setTemplate] = useState("blank");
+  
+  // Text styling states
+  const [activeStyles, setActiveStyles] = useState<string[]>([]);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Visuals
   type RatioPreset = (typeof RATIO_PRESETS)[number];
@@ -131,6 +188,21 @@ export default function LinkedInPostStudio() {
   const [accent, setAccent] = useState<string>(theme.accent);
   const [useGradient, setUseGradient] = useState<boolean>(theme.gradient);
 
+  // Image background
+  const [backgroundImage, setBackgroundImage] = useState<string>("");
+  const [imageFit, setImageFit] = useState<"cover" | "contain">("cover");
+  const [imageDim, setImageDim] = useState<number>(0.3);
+
+  // Text box overlay
+  const [textBoxBg, setTextBoxBg] = useState<string>("#ffffff");
+  const [textBoxOpacity, setTextBoxOpacity] = useState<number>(0.9);
+  const [textBoxPadding, setTextBoxPadding] = useState<number>(32);
+  const [textBoxRadius, setTextBoxRadius] = useState<number>(16);
+  const [enableFreePositioning, setEnableFreePositioning] = useState<boolean>(false);
+  const [textBoxX, setTextBoxX] = useState<number>(50); // percentage
+  const [textBoxY, setTextBoxY] = useState<number>(50); // percentage
+  const [textBoxWidth, setTextBoxWidth] = useState<number>(80); // percentage
+
   // Derived text
   const composed = useMemo(() => {
     const base = TEMPLATES[template](raw);
@@ -141,9 +213,80 @@ export default function LinkedInPostStudio() {
 
   const styledForCopy = useMemo(() => toFancy(composed, style), [composed, style]);
 
+  // Image upload handler
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && (file.type === "image/jpeg" || file.type === "image/png")) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setBackgroundImage(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const clearImage = () => {
+    setBackgroundImage("");
+  };
+
+  // Text styling functions
+  const toggleStyle = (styleKey: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    
+    // Toggle the active style state
+    setActiveStyles(prev => 
+      prev.includes(styleKey) 
+        ? prev.filter(s => s !== styleKey)
+        : [...prev, styleKey]
+    );
+    
+    if (start === end) {
+      // No selection, just toggle the style for future typing
+      return;
+    }
+
+    // Get selected text
+    const selectedText = raw.substring(start, end);
+    
+    // Check if we're turning the style on or off
+    const isActivating = !activeStyles.includes(styleKey);
+    
+    let newText;
+    if (isActivating) {
+      // Apply the style transformation
+      const styledText = toFancy(selectedText, styleKey);
+      newText = raw.substring(0, start) + styledText + raw.substring(end);
+    } else {
+      // Remove the style by converting back to normal text
+      const unstyledText = toNormal(selectedText);
+      newText = raw.substring(0, start) + unstyledText + raw.substring(end);
+    }
+    
+    setRaw(newText);
+    
+    // Restore selection
+    setTimeout(() => {
+      const newLength = isActivating ? toFancy(selectedText, styleKey).length : selectedText.length;
+      textarea.setSelectionRange(start, start + newLength);
+      textarea.focus();
+    }, 0);
+  };
+
   // Persistence
   useEffect(() => {
-    const saved = localStorage.getItem("lps_v1");
+    // Try v2 first, then fallback to v1
+    let saved = localStorage.getItem("lps_v2");
+    let isV1Fallback = false;
+    
+    if (!saved) {
+      saved = localStorage.getItem("lps_v1");
+      isV1Fallback = true;
+    }
+
     if (saved) {
       try {
         const s = JSON.parse(saved);
@@ -171,6 +314,21 @@ export default function LinkedInPostStudio() {
         setAccent(s.accent || t.accent);
         setUseGradient(s.useGradient ?? t.gradient);
         setTemplate(s.template || "blank");
+        
+        // v2 features (only if not fallback from v1)
+        if (!isV1Fallback) {
+          setBackgroundImage(s.backgroundImage || "");
+          setImageFit(s.imageFit || "cover");
+          setImageDim(s.imageDim ?? 0.3);
+          setTextBoxBg(s.textBoxBg || "#ffffff");
+          setTextBoxOpacity(s.textBoxOpacity ?? 0.9);
+          setTextBoxPadding(s.textBoxPadding ?? 32);
+          setTextBoxRadius(s.textBoxRadius ?? 16);
+          setEnableFreePositioning(!!s.enableFreePositioning);
+          setTextBoxX(s.textBoxX ?? 50);
+          setTextBoxY(s.textBoxY ?? 50);
+          setTextBoxWidth(s.textBoxWidth ?? 80);
+        }
       } catch {}
     }
   }, []);
@@ -199,8 +357,20 @@ export default function LinkedInPostStudio() {
       accent,
       useGradient,
       template,
+      // v2 features
+      backgroundImage,
+      imageFit,
+      imageDim,
+      textBoxBg,
+      textBoxOpacity,
+      textBoxPadding,
+      textBoxRadius,
+      enableFreePositioning,
+      textBoxX,
+      textBoxY,
+      textBoxWidth,
     };
-    localStorage.setItem("lps_v1", JSON.stringify(payload));
+    localStorage.setItem("lps_v2", JSON.stringify(payload));
   }, [
     raw,
     style,
@@ -224,6 +394,17 @@ export default function LinkedInPostStudio() {
     accent,
     useGradient,
     template,
+    backgroundImage,
+    imageFit,
+    imageDim,
+    textBoxBg,
+    textBoxOpacity,
+    textBoxPadding,
+    textBoxRadius,
+    enableFreePositioning,
+    textBoxX,
+    textBoxY,
+    textBoxWidth,
   ]);
 
   // Export
@@ -301,29 +482,52 @@ export default function LinkedInPostStudio() {
     [ratio, fg, font, align, useGradient, bg1, bg2, radius, padding]
   );
 
-  const textBlockStyle = useMemo(
-    () => ({
-      width: "100%",
+  const textBlockStyle = useMemo(() => {
+    const baseStyle = {
       whiteSpace: "pre-wrap" as const,
       fontSize: fontSize,
       lineHeight: lineHeight,
       textAlign: align,
-    }),
-    [fontSize, lineHeight, align]
-  );
+    };
+
+    if (enableFreePositioning) {
+      return {
+        ...baseStyle,
+        position: "absolute" as const,
+        left: "50%",
+        top: "50%",
+        transform: `translate(-50%, -50%) translate(${(textBoxX - 50) * (ratio.w / 100)}px, ${(textBoxY - 50) * (ratio.h / 100)}px)`,
+        width: `${textBoxWidth}%`,
+        maxWidth: `${ratio.w - 2 * padding}px`,
+        backgroundColor: textBoxOpacity > 0 ? hexToRgba(textBoxBg, textBoxOpacity) : "transparent",
+        padding: textBoxOpacity > 0 ? textBoxPadding : 0,
+        borderRadius: textBoxOpacity > 0 ? textBoxRadius : 0,
+      };
+    } else {
+      return {
+        ...baseStyle,
+        width: "100%",
+        backgroundColor: backgroundImage && textBoxOpacity > 0 ? hexToRgba(textBoxBg, textBoxOpacity) : "transparent",
+        padding: backgroundImage && textBoxOpacity > 0 ? textBoxPadding : 0,
+        borderRadius: backgroundImage && textBoxOpacity > 0 ? textBoxRadius : 0,
+      };
+    }
+  }, [fontSize, lineHeight, align, enableFreePositioning, textBoxX, textBoxY, textBoxWidth, ratio, padding, textBoxBg, textBoxOpacity, textBoxPadding, textBoxRadius, backgroundImage]);
 
   return (
     <div className="w-full min-h-screen bg-slate-50">
-      <div className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: Editor */}
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="shadow-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <Wand2 className="h-5 w-5" /> Text Composer
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+      <div className="max-w-7xl mx-auto p-6 space-y-6">
+        {/* Top Row: Text Editor and Visual Setup */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left: Text Editor */}
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+            <Card className="shadow-xl">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <Wand2 className="h-5 w-5" /> Text Composer
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label htmlFor="prefix">Prefix (optional)</Label>
@@ -337,7 +541,13 @@ export default function LinkedInPostStudio() {
 
               <div className="space-y-2">
                 <Label>Main text</Label>
-                <Textarea rows={10} placeholder={"Write your LinkedIn post draft here…"} value={raw} onChange={(e) => setRaw(e.target.value)} />
+                <Textarea 
+                  ref={textareaRef}
+                  rows={10} 
+                  placeholder={"Write your LinkedIn post draft here…"} 
+                  value={raw} 
+                  onChange={(e) => setRaw(e.target.value)} 
+                />
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
@@ -348,26 +558,46 @@ export default function LinkedInPostStudio() {
                   <Switch id="autoenrich" checked={autoEnrich} onCheckedChange={setAutoEnrich} />
                   <Label htmlFor="autoenrich">Auto-enrich while typing</Label>
                 </div>
+                <Button size="sm" variant="outline" onClick={() => {
+                  // Remove Unicode styling from raw text only, don't add prefix/suffix
+                  const unstyledText = toNormal(raw);
+                  setRaw(unstyledText);
+                  setActiveStyles([]);
+                }}> <Eraser className="h-4 w-4 mr-2"/> Clear style</Button>
                 <Button size="sm" variant="outline" onClick={() => setRaw("")}> <Eraser className="h-4 w-4 mr-2"/> Clear</Button>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-3">
                 <div>
-                  <Label>Copy style</Label>
-                  <Select value={style} onValueChange={setStyle}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="bold">𝐁𝐨𝐥𝐝 (LinkedIn-friendly)</SelectItem>
-                      <SelectItem value="italic">𝑰𝒕𝒂𝒍𝒊𝒄</SelectItem>
-                      <SelectItem value="boldItalic">𝑩𝒐𝒍𝒅 𝑰𝒕𝒂𝒍𝒊𝒄</SelectItem>
-                      <SelectItem value="monospace">𝙈𝙤𝙣𝙤𝙨𝙥𝙖𝙘𝙚</SelectItem>
-                      <SelectItem value="serifBold">Serif 𝐁𝐨𝐥𝐝</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label>Text styling (select text first)</Label>
+                  <div className="flex gap-2 mt-2">
+                    {[
+                      { key: "bold", label: "Bold", letter: "𝐁", bg: "bg-blue-100 border-blue-400" },
+                      { key: "italic", label: "Italic", letter: "𝐼", bg: "bg-purple-100 border-purple-400" },
+                      { key: "boldItalic", label: "Bold Italic", letter: "𝑩", bg: "bg-indigo-100 border-indigo-400" },
+                      { key: "monospace", label: "Monospace", letter: "𝙼", bg: "bg-green-100 border-green-400" },
+                      { key: "serifBold", label: "Serif Bold", letter: "𝐒", bg: "bg-orange-100 border-orange-400" },
+                    ].map((opt) => {
+                      const isActive = activeStyles.includes(opt.key);
+                      return (
+                        <Button
+                          key={opt.key}
+                          size="sm"
+                          variant={isActive ? "default" : "outline"}
+                          className={isActive ? `${opt.bg} text-gray-800 font-semibold shadow-md` : ""}
+                          title={`${opt.label} ${isActive ? "(ON)" : "(OFF)"}`}
+                          aria-label={`${opt.label} ${isActive ? "active" : "inactive"}`}
+                          onClick={() => toggleStyle(opt.key)}
+                        >
+                          {opt.letter}
+                        </Button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="col-span-2 flex items-end">
-                  <Button className="w-full" onClick={async () => { await navigator.clipboard.writeText(styledForCopy); }}>
-                    <Copy className="h-4 w-4 mr-2" /> Copy formatted for LinkedIn
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={async () => { await navigator.clipboard.writeText(styledForCopy); }}>
+                    <Copy className="h-4 w-4 mr-2" /> Copy for LI
                   </Button>
                 </div>
               </div>
@@ -377,15 +607,15 @@ export default function LinkedInPostStudio() {
           </Card>
         </motion.div>
 
-        {/* Right: Visual Exporter */}
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="shadow-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <ImageIcon className="h-5 w-5" /> Visual Post Builder
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
+          {/* Right: Visual Setup */}
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+            <Card className="shadow-xl">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <ImageIcon className="h-5 w-5" /> Visual Setup
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
               {/* Controls */}
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-3">
@@ -493,13 +723,201 @@ export default function LinkedInPostStudio() {
                       <Input placeholder="@yourhandle or brand" value={watermark} onChange={(e) => setWatermark(e.target.value)} />
                     )}
                   </div>
+
+                  {/* Image Background */}
+                  <div className="mt-4 space-y-3">
+                    <Label>Background Image</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => document.getElementById('image-upload')?.click()}
+                        className="flex-1"
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Upload JPG/PNG
+                      </Button>
+                      {backgroundImage && (
+                        <Button variant="outline" size="icon" onClick={clearImage}>
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                    <input
+                      id="image-upload"
+                      type="file"
+                      accept="image/jpeg,image/png"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                    />
+                    
+                    {backgroundImage && (
+                      <>
+                        <div>
+                          <Label>Image fit</Label>
+                          <Select value={imageFit} onValueChange={(v) => setImageFit(v as "cover" | "contain")}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="cover">Cover (fill, may crop)</SelectItem>
+                              <SelectItem value="contain">Contain (fit entirely)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        
+                        <div>
+                          <Label>Dim image: {Math.round(imageDim * 100)}%</Label>
+                          <Slider 
+                            value={[imageDim]} 
+                            min={0} 
+                            max={0.8} 
+                            step={0.05} 
+                            onValueChange={([v]) => setImageDim(v as number)} 
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Text Box Overlay */}
+                  {backgroundImage && (
+                    <div className="mt-4 space-y-3">
+                      <Label>Text Box Overlay</Label>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label>Background</Label>
+                          <Input type="color" value={textBoxBg} onChange={(e) => setTextBoxBg(e.target.value)} />
+                        </div>
+                        <div>
+                          <Label>Opacity: {Math.round(textBoxOpacity * 100)}%</Label>
+                          <Slider 
+                            value={[textBoxOpacity]} 
+                            min={0} 
+                            max={1} 
+                            step={0.05} 
+                            onValueChange={([v]) => setTextBoxOpacity(v as number)} 
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label>Padding: {textBoxPadding}px</Label>
+                          <Slider 
+                            value={[textBoxPadding]} 
+                            min={0} 
+                            max={64} 
+                            step={4} 
+                            onValueChange={([v]) => setTextBoxPadding(v as number)} 
+                          />
+                        </div>
+                        <div>
+                          <Label>Radius: {textBoxRadius}px</Label>
+                          <Slider 
+                            value={[textBoxRadius]} 
+                            min={0} 
+                            max={32} 
+                            step={2} 
+                            onValueChange={([v]) => setTextBoxRadius(v as number)} 
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Switch 
+                          id="freepos" 
+                          checked={enableFreePositioning} 
+                          onCheckedChange={setEnableFreePositioning} 
+                        />
+                        <Label htmlFor="freepos">Free positioning</Label>
+                        <Move className="h-4 w-4 ml-1" />
+                      </div>
+
+                      {enableFreePositioning && (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Label>X offset: {textBoxX}%</Label>
+                              <Slider 
+                                value={[textBoxX]} 
+                                min={0} 
+                                max={100} 
+                                step={1} 
+                                onValueChange={([v]) => setTextBoxX(clamp(v as number, 0, 100))} 
+                              />
+                            </div>
+                            <div>
+                              <Label>Y offset: {textBoxY}%</Label>
+                              <Slider 
+                                value={[textBoxY]} 
+                                min={0} 
+                                max={100} 
+                                step={1} 
+                                onValueChange={([v]) => setTextBoxY(clamp(v as number, 0, 100))} 
+                              />
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <Label>Width: {textBoxWidth}%</Label>
+                            <Slider 
+                              value={[textBoxWidth]} 
+                              min={20} 
+                              max={100} 
+                              step={5} 
+                              onValueChange={([v]) => setTextBoxWidth(clamp(v as number, 20, 100))} 
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+        </div>
 
+        {/* Bottom Row: Preview and Export */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+          <Card className="shadow-xl">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <ImageIcon className="h-5 w-5" /> Preview & Export
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
               {/* Stage */}
               <div className="w-full overflow-auto rounded-2xl border bg-white p-4">
                 <div className="mx-auto" style={{ width: ratio.w }}>
                   <div ref={stageRef} style={stageStyle}>
+                    {/* Background Image */}
+                    {backgroundImage && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          backgroundImage: `url(${backgroundImage})`,
+                          backgroundSize: imageFit,
+                          backgroundPosition: "center",
+                          backgroundRepeat: "no-repeat",
+                          borderRadius: radius,
+                        }}
+                      />
+                    )}
+
+                    {/* Image Dim Overlay */}
+                    {backgroundImage && imageDim > 0 && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          backgroundColor: `rgba(0, 0, 0, ${imageDim})`,
+                          borderRadius: radius,
+                        }}
+                      />
+                    )}
+
                     {/* Safe margins overlay (for visually centering & crop awareness) */}
                     {showSafe && (
                       <div
@@ -511,6 +929,7 @@ export default function LinkedInPostStudio() {
                           margin: 24,
                           borderRadius: Math.max(0, radius - 24),
                           pointerEvents: "none",
+                          zIndex: 10,
                         }}
                       />
                     )}
@@ -525,10 +944,11 @@ export default function LinkedInPostStudio() {
                         height: "100%",
                         background: accent,
                         opacity: 0.5,
+                        zIndex: 5,
                       }}
                     />
 
-                    {/* Text */}
+                    {/* Text block - using either free positioning or normal flow */}
                     <div style={textBlockStyle}>
                       {styledForCopy}
                     </div>
@@ -544,7 +964,7 @@ export default function LinkedInPostStudio() {
               </div>
 
               {/* Export buttons */}
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-3 justify-center">
                 <Button onClick={() => exportAs("png")}> 
                   <Download className="h-4 w-4 mr-2" /> Export PNG
                 </Button>
@@ -553,15 +973,15 @@ export default function LinkedInPostStudio() {
                 </Button>
               </div>
 
-              <div className="text-xs text-slate-500">
+              <div className="text-xs text-slate-500 text-center">
                 Tip: For crisp text on upload, we render at native pixel dimensions with 2× pixel ratio. LinkedIn typically preserves 1080px or 1200px widths well.
               </div>
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* Footer helper */}
-        <div className="lg:col-span-2 text-center text-xs text-slate-500 pt-2">
+        {/* Footer */}
+        <div className="text-center text-xs text-slate-500 pt-2">
           Built for faster LinkedIn posting: enrich → copy → image export. Save your favorite theme as defaults (auto-saved locally).
         </div>
       </div>
