@@ -253,13 +253,27 @@ export default function LinkedInPostStudio() {
   // Image upload handler
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && (file.type === "image/jpeg" || file.type === "image/png")) {
+    if (file && (file.type === "image/jpeg" || file.type === "image/png" || file.type === "image/webp")) {
+      // Check file size (limit to 10MB for performance)
+      if (file.size > 10 * 1024 * 1024) {
+        alert('Image file is too large (max 10MB). Please choose a smaller image.');
+        return;
+      }
+
       const reader = new FileReader();
       reader.onload = (e) => {
-        setBackgroundImage(e.target?.result as string);
+        const result = e.target?.result as string;
+        setBackgroundImage(result);
+      };
+      reader.onerror = () => {
+        alert('Failed to read the image file. Please try again.');
       };
       reader.readAsDataURL(file);
+    } else {
+      alert('Please select a valid image file (JPG, PNG, or WebP).');
     }
+    // Clear the input so the same file can be selected again
+    event.target.value = '';
   };
 
   const clearImage = () => {
@@ -609,10 +623,25 @@ export default function LinkedInPostStudio() {
     const node = stageRef.current;
     if (!node) return;
 
+    // Wait for any images to load before exporting
+    if (backgroundImage) {
+      const images = node.querySelectorAll('img');
+      await Promise.all(
+        Array.from(images).map(img => {
+          if (img.complete) return Promise.resolve();
+          return new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+            // Set a timeout to prevent hanging
+            setTimeout(reject, 5000);
+          });
+        })
+      );
+    }
+
     const scale = 2; // retina crispness
     const width = ratio.w;
     const height = ratio.h;
-
 
     const opts = {
       backgroundColor: backgroundImage ? "transparent" : bg1,
@@ -626,9 +655,11 @@ export default function LinkedInPostStudio() {
       },
       pixelRatio: scale,
       quality: 0.98,
-      // Ensure background images are captured
+      // Enhanced options for better image capture
       allowTaint: true,
       useCORS: true,
+      skipAutoScale: true,
+      preferredFontFormat: 'woff2',
     } as const;
 
     const fileBase = kebab(composed.replace(/\n+/g, " ")) + `-${ratio.key}`;
@@ -649,11 +680,15 @@ export default function LinkedInPostStudio() {
       }
     } catch (error) {
       console.error("Export failed:", error);
-      // Fallback: try without CORS options
-      const fallbackOpts = { ...opts };
-      delete (fallbackOpts as Record<string, unknown>).allowTaint;
-      delete (fallbackOpts as Record<string, unknown>).useCORS;
-      
+      // Fallback: try without enhanced options
+      const fallbackOpts = {
+        backgroundColor: backgroundImage ? "transparent" : bg1,
+        width,
+        height,
+        pixelRatio: scale,
+        quality: type === "png" ? 0.98 : 0.92,
+      };
+
       try {
         if (type === "png") {
           const dataUrl = await htmlToImage.toPng(node, fallbackOpts);
@@ -662,7 +697,7 @@ export default function LinkedInPostStudio() {
           a.download = `${fileBase}.png`;
           a.click();
         } else {
-          const dataUrl = await htmlToImage.toJpeg(node, { ...fallbackOpts, quality: 0.92 });
+          const dataUrl = await htmlToImage.toJpeg(node, fallbackOpts);
           const a = document.createElement("a");
           a.href = dataUrl;
           a.download = `${fileBase}.jpg`;
@@ -670,7 +705,7 @@ export default function LinkedInPostStudio() {
         }
       } catch (fallbackError) {
         console.error("Fallback export also failed:", fallbackError);
-        alert("Export failed. Please try again or check console for details.");
+        alert(`Export failed. ${backgroundImage ? 'Try removing the background image and exporting again, or ' : ''}Please try again or check console for details.`);
       }
     }
   }
@@ -1314,7 +1349,7 @@ export default function LinkedInPostStudio() {
                             className="flex-1"
                           >
                             <Upload className="h-4 w-4 mr-2" />
-                            Upload JPG/PNG
+                            Upload Image
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>
@@ -1337,7 +1372,7 @@ export default function LinkedInPostStudio() {
                     <input
                       id="image-upload"
                       type="file"
-                      accept="image/jpeg,image/png"
+                      accept="image/jpeg,image/png,image/webp"
                       onChange={handleImageUpload}
                       className="hidden"
                     />
@@ -1710,11 +1745,11 @@ export default function LinkedInPostStudio() {
                                 onClick={() => document.getElementById('image-upload-live')?.click()}
                               >
                                 <Upload className="h-4 w-4 mr-2" />
-                                Upload JPG/PNG
+                                Upload Image
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p>Upload a background image for your post (JPG or PNG format)</p>
+                              <p>Upload a background image for your post (JPG, PNG, or WebP format)</p>
                             </TooltipContent>
                           </Tooltip>
                           {backgroundImage && (
@@ -1734,7 +1769,7 @@ export default function LinkedInPostStudio() {
                       <input
                         id="image-upload-live"
                         type="file"
-                        accept="image/jpeg,image/png"
+                        accept="image/jpeg,image/png,image/webp"
                         onChange={handleImageUpload}
                         className="hidden"
                       />
@@ -1928,18 +1963,21 @@ export default function LinkedInPostStudio() {
                   >
                     <div style={{ transform: `scale(${exportPreviewScale})`, transformOrigin: 'top left' }}>
                       <div ref={stageRef} style={stageStyle}>
-                        {/* Background Image */}
+                        {/* Background Image - Using IMG element for better html-to-image compatibility */}
                         {backgroundImage && (
-                          <div
+                          <img
+                            src={backgroundImage}
+                            alt="Background"
                             style={{
                               position: "absolute",
                               inset: 0,
-                              backgroundImage: `url("${backgroundImage}")`,
-                              backgroundSize: imageFit,
-                              backgroundPosition: "center",
-                              backgroundRepeat: "no-repeat",
+                              width: "100%",
+                              height: "100%",
+                              objectFit: imageFit,
+                              objectPosition: "center",
                               borderRadius: radius,
                               zIndex: 1,
+                              pointerEvents: "none",
                             }}
                           />
                         )}
