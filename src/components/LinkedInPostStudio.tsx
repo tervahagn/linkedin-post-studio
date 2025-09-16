@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Download, Copy, Wand2, Image as ImageIcon, Eraser, AlignLeft, AlignCenter, AlignRight, Upload, X, Move, List, ListOrdered, Type, AlignVerticalSpaceAround, ArrowUp, ArrowDown, Smile, Hash } from "lucide-react";
+import { Download, Copy, Wand2, Image as ImageIcon, Eraser, AlignLeft, AlignCenter, AlignRight, Upload, X, Move, List, ListOrdered, Type, AlignVerticalSpaceAround, ArrowUp, ArrowDown, Smile, Hash, Underline as UnderlineIcon, Strikethrough } from "lucide-react";
 import * as htmlToImage from "html-to-image";
 
 // --- Popular LinkedIn Emojis -------------------------------------------------
@@ -129,13 +129,12 @@ const kebab = (s: string) =>
 
 // --- Aspect Ratios + Presets -------------------------------------------------
 const RATIO_PRESETS = [
-  { key: "4:5", w: 1080, h: 1350, label: "Portrait 4:5 (1080×1350) – recommended" },
-  { key: "1:1", w: 1080, h: 1080, label: "Square 1:1 (1080×1080) – recommended" },
-  { key: "16:9", w: 1920, h: 1080, label: "Landscape 16:9 (1920×1080) – common" },
-  // Additional popular LinkedIn-friendly formats
-  { key: "1.91:1", w: 1200, h: 628, label: "Landscape 1.91:1 (1200×628) – link format" },
-  { key: "2:3", w: 1080, h: 1620, label: "Tall 2:3 (1080×1620) – carousel alt" },
-  { key: "9:16", w: 1080, h: 1920, label: "Vertical 9:16 (1080×1920) – mobile-first" },
+  { key: "4:5", w: 1080, h: 1350, label: "Portrait 4:5" },
+  { key: "1:1", w: 1080, h: 1080, label: "Square 1:1" },
+  { key: "16:9", w: 1920, h: 1080, label: "Landscape 16:9" },
+  { key: "1.91:1", w: 1200, h: 628, label: "Landscape 1.91:1" },
+  { key: "2:3", w: 1080, h: 1620, label: "Tall 2:3" },
+  { key: "9:16", w: 1080, h: 1920, label: "Vertical 9:16" },
 ] as const;
 
 const FONT_FAMILIES = [
@@ -178,6 +177,7 @@ export default function LinkedInPostStudio() {
   const [font, setFont] = useState<string>(FONT_FAMILIES[0].v);
   const [fontSize, setFontSize] = useState<number>(48);
   const [lineHeight, setLineHeight] = useState<number>(1.2);
+  const [letterSpacing, setLetterSpacing] = useState<number>(0);
   const [align, setAlign] = useState<"left" | "center" | "right">("left");
   const [verticalAlign, setVerticalAlign] = useState<"top" | "center" | "bottom">("center");
   const [padding, setPadding] = useState<number>(64);
@@ -210,6 +210,27 @@ export default function LinkedInPostStudio() {
   const [textBoxX, setTextBoxX] = useState<number>(50); // percentage
   const [textBoxY, setTextBoxY] = useState<number>(50); // percentage
   const [textBoxWidth, setTextBoxWidth] = useState<number>(80); // percentage
+
+  // UI preview states
+  const [textPreviewExpanded, setTextPreviewExpanded] = useState<boolean>(false);
+  const [exportPreviewScale, setExportPreviewScale] = useState<number>(0.45);
+  const exportContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const fitExportToWidth = React.useCallback(() => {
+    const el = exportContainerRef.current;
+    if (!el) return;
+    const available = el.clientWidth - 8; // account for inner padding/scrollbar
+    const next = Math.min(1, available / ratio.w);
+    setExportPreviewScale(parseFloat(next.toFixed(2)) || 1);
+  }, [ratio.w]);
+
+  const fitExportToHeight = React.useCallback(() => {
+    const el = exportContainerRef.current;
+    if (!el) return;
+    const available = el.clientHeight - 8; // account for inner padding/scrollbar
+    const next = Math.min(1, available / ratio.h);
+    setExportPreviewScale(parseFloat(next.toFixed(2)) || 1);
+  }, [ratio.h]);
 
   // Derived text
   const composed = useMemo(() => {
@@ -395,21 +416,39 @@ export default function LinkedInPostStudio() {
     const isActivating = !activeStyles.includes(styleKey);
     
     let newText;
-    if (isActivating) {
-      // Apply the style transformation
-      const styledText = toFancy(selectedText, styleKey);
-      newText = raw.substring(0, start) + styledText + raw.substring(end);
+    if (styleKey === 'underline' || styleKey === 'strike') {
+      const mark = styleKey === 'underline' ? '\u0332' : '\u0336';
+      if (isActivating) {
+        const styledText = Array.from(selectedText).map(ch => ch === '\n' ? ch : ch + mark).join('');
+        newText = raw.substring(0, start) + styledText + raw.substring(end);
+      } else {
+        // remove combining mark from the range
+        const cleaned = selectedText.replace(new RegExp(mark, 'g'), '');
+        newText = raw.substring(0, start) + cleaned + raw.substring(end);
+      }
     } else {
-      // Remove the style by converting back to normal text
-      const unstyledText = toNormal(selectedText);
-      newText = raw.substring(0, start) + unstyledText + raw.substring(end);
+      if (isActivating) {
+        // Apply the style transformation
+        const styledText = toFancy(selectedText, styleKey);
+        newText = raw.substring(0, start) + styledText + raw.substring(end);
+      } else {
+        // Remove the style by converting back to normal text
+        const unstyledText = toNormal(selectedText);
+        newText = raw.substring(0, start) + unstyledText + raw.substring(end);
+      }
     }
     
     setRaw(newText);
     
     // Restore selection
     setTimeout(() => {
-      const newLength = isActivating ? toFancy(selectedText, styleKey).length : selectedText.length;
+      let newLength = selectedText.length;
+      if (styleKey === 'underline' || styleKey === 'strike') {
+        if (isActivating) newLength = Array.from(selectedText).map(ch => ch === '\n' ? ch : ch + 'X').join('').length; // +1 per non-newline
+        else newLength = selectedText.replace(/\u0332|\u0336/g, '').length;
+      } else {
+        newLength = isActivating ? toFancy(selectedText, styleKey).length : selectedText.length;
+      }
       textarea.setSelectionRange(start, start + newLength);
       textarea.focus();
     }, 0);
@@ -438,6 +477,7 @@ export default function LinkedInPostStudio() {
         setFont(s.font || FONT_FAMILIES[0].v);
         setFontSize(s.fontSize || 48);
         setLineHeight(s.lineHeight || 1.2);
+        setLetterSpacing(s.letterSpacing ?? 0);
         setAlign(s.align || "left");
         setPadding(s.padding || 64);
         setRadius(s.radius || 32);
@@ -483,6 +523,7 @@ export default function LinkedInPostStudio() {
       font,
       fontSize,
       lineHeight,
+      letterSpacing,
       align,
       padding,
       radius,
@@ -499,7 +540,6 @@ export default function LinkedInPostStudio() {
       gradientType,
       gradientAngle,
       // v2 features
-      backgroundImage,
       imageFit,
       imageDim,
       textBoxBg,
@@ -511,7 +551,20 @@ export default function LinkedInPostStudio() {
       textBoxY,
       textBoxWidth,
     };
-    localStorage.setItem("lps_v2", JSON.stringify(payload));
+    try {
+      localStorage.setItem("lps_v2", JSON.stringify(payload));
+    } catch (err) {
+      // Avoid crashing the UI if storage quota is exceeded (e.g., Safari private mode or large previous items)
+      try {
+        // Attempt to remove old large key and retry once
+        // Older versions may have stored a large backgroundImage data URL
+        localStorage.removeItem("lps_v2");
+        localStorage.setItem("lps_v2", JSON.stringify(payload));
+      } catch {
+        // Give up silently; settings just won't persist this session
+        console.warn("LocalStorage quota exceeded — settings not persisted.");
+      }
+    }
   }, [
     raw,
     hashtags,
@@ -622,6 +675,38 @@ export default function LinkedInPostStudio() {
     }
   }
 
+  // Reset visual setup to defaults
+  function resetVisualDefaults() {
+    const defTheme = THEME_PRESETS[0];
+    setRatio(RATIO_PRESETS[0]);
+    setFont(FONT_FAMILIES[0].v);
+    setFontSize(48);
+    setLineHeight(1.2);
+    setLetterSpacing(0);
+    setAlign("left");
+    setVerticalAlign("center");
+    setPadding(64);
+    setRadius(32);
+    setShowWatermark(false);
+    setWatermark("@yourhandle");
+    setShowSafe(false);
+    applyTheme(defTheme);
+    setUseGradient(defTheme.gradient);
+    setGradientType("linear");
+    setGradientAngle(135);
+    setBackgroundImage("");
+    setImageFit("cover");
+    setImageDim(0.3);
+    setTextBoxBg("#ffffff");
+    setTextBoxOpacity(0.9);
+    setTextBoxPadding(32);
+    setTextBoxRadius(16);
+    setEnableFreePositioning(false);
+    setTextBoxX(50);
+    setTextBoxY(50);
+    setTextBoxWidth(80);
+  }
+
 
   function applyTheme(p: ThemePreset) {
     setTheme(p);
@@ -670,6 +755,9 @@ export default function LinkedInPostStudio() {
       fontSize: fontSize,
       lineHeight: lineHeight,
       textAlign: align,
+      letterSpacing: `${letterSpacing}px`,
+      position: "relative" as const,
+      zIndex: 20 as const,
     };
 
     if (enableFreePositioning) {
@@ -694,14 +782,14 @@ export default function LinkedInPostStudio() {
         borderRadius: backgroundImage && textBoxOpacity > 0 ? textBoxRadius : 0,
       };
     }
-  }, [fontSize, lineHeight, align, enableFreePositioning, textBoxX, textBoxY, textBoxWidth, ratio, padding, textBoxBg, textBoxOpacity, textBoxPadding, textBoxRadius, backgroundImage]);
+  }, [fontSize, lineHeight, letterSpacing, align, enableFreePositioning, textBoxX, textBoxY, textBoxWidth, ratio, padding, textBoxBg, textBoxOpacity, textBoxPadding, textBoxRadius, backgroundImage]);
 
   return (
     <TooltipProvider delayDuration={200}>
       <div className="w-full min-h-screen bg-slate-50">
       <div className="max-w-7xl mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
-        {/* Top Row: Text Editor and Visual Setup */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
+        {/* Top Row: Text Composer + Text Preview */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
           {/* Left: Text Editor */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
             <Card className="shadow-xl">
@@ -746,22 +834,56 @@ export default function LinkedInPostStudio() {
                     <Label htmlFor="autoenrich">Auto enrich</Label>
                   </div>
                 </div>
-                
-                <div className="flex flex-wrap items-center gap-2">
+
+                {/* Unified toolbar: style first, then other tools */}
+                <div className="flex flex-wrap items-center gap-1 rounded-md border bg-white p-1">
+                  {/* Style: Bold, Italic, Underline, Strike */}
+                  {[
+                    { key: "bold", label: "Bold" as const },
+                    { key: "italic", label: "Italic" as const },
+                    { key: "underline", label: "Underline" as const },
+                    { key: "strike", label: "Strikethrough" as const },
+                  ].map((opt) => {
+                    const isActive = activeStyles.includes(opt.key);
+                    const label = `${opt.label} ${isActive ? "(ON)" : "(OFF)"}`;
+                    return (
+                      <Tooltip key={opt.key}>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant={isActive ? "default" : "outline"}
+                            className={isActive ? "text-gray-800 shadow-sm" : ""}
+                            aria-label={label}
+                            onClick={() => toggleStyle(opt.key)}
+                          >
+                            {opt.key === 'bold' && <span className="font-bold">B</span>}
+                            {opt.key === 'italic' && <span className="italic">I</span>}
+                            {opt.key === 'underline' && <UnderlineIcon className="h-4 w-4" />}
+                            {opt.key === 'strike' && <Strikethrough className="h-4 w-4" />}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{opt.label}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                  <div className="w-px h-6 bg-slate-200 mx-1" />
+                  {/* Emoji */}
                   <div className="relative">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button 
-                          size="sm" 
+                          size="icon" 
                           variant="outline" 
                           onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                          className="w-12"
+                          aria-label="Insert emoji"
                         >
                           <Smile className="h-4 w-4" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Insert emoji at cursor position</p>
+                        <p>Insert emoji at cursor</p>
                       </TooltipContent>
                     </Tooltip>
                     {showEmojiPicker && (
@@ -793,120 +915,90 @@ export default function LinkedInPostStudio() {
                       </div>
                     )}
                   </div>
+
+                  <div className="w-px h-6 bg-slate-200 mx-1" />
+
+                  {/* Lists */}
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button size="sm" variant="outline" onClick={insertBulletList}>
-                        <List className="h-4 w-4 mr-2" /> Bullet List
+                      <Button size="icon" variant="outline" onClick={insertBulletList} aria-label="Bullet list">
+                        <List className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Convert selected lines to bullet points or insert a new bullet point</p>
+                      <p>Bullet list</p>
                     </TooltipContent>
                   </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button size="sm" variant="outline" onClick={insertNumberedList}>
-                        <ListOrdered className="h-4 w-4 mr-2" /> Numbered List
+                      <Button size="icon" variant="outline" onClick={insertNumberedList} aria-label="Numbered list">
+                        <ListOrdered className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Convert selected lines to numbered list or insert a new numbered item</p>
+                      <p>Numbered list</p>
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <div className="w-px h-6 bg-slate-200 mx-1" />
+
+                  {/* Case */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="icon" variant="outline" onClick={() => transformCase('upper')} aria-label="UPPERCASE">
+                        <span className="text-[10px] font-semibold">UP</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>UPPERCASE</p>
                     </TooltipContent>
                   </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button size="sm" variant="outline" onClick={() => transformCase('upper')}>
-                        <Type className="h-4 w-4 mr-2" /> UPPER
+                      <Button size="icon" variant="outline" onClick={() => transformCase('lower')} aria-label="lowercase">
+                        <span className="text-[10px] font-semibold">lo</span>
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Convert selected text to UPPERCASE</p>
+                      <p>lowercase</p>
                     </TooltipContent>
                   </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button size="sm" variant="outline" onClick={() => transformCase('lower')}>
-                        <Type className="h-4 w-4 mr-2" /> lower
+                      <Button size="icon" variant="outline" onClick={() => transformCase('sentence')} aria-label="Sentence case">
+                        <span className="text-[10px] font-semibold">Aa</span>
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Convert selected text to lowercase</p>
+                      <p>Sentence case</p>
                     </TooltipContent>
                   </Tooltip>
+
+                  <div className="w-px h-6 bg-slate-200 mx-1" />
+
+                  {/* Clear / Reset */}
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button size="sm" variant="outline" onClick={() => transformCase('sentence')}>
-                        <Type className="h-4 w-4 mr-2" /> Sentence case
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Convert selected text to Sentence case (first letter of each sentence capitalized)</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                
-                <div className="flex flex-wrap items-center gap-2">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button size="sm" variant="outline" onClick={() => {
-                        // Remove Unicode styling from raw text only
+                      <Button size="icon" variant="outline" onClick={() => {
                         const unstyledText = toNormal(raw);
                         setRaw(unstyledText);
                         setActiveStyles([]);
-                      }}> <Eraser className="h-4 w-4 mr-2"/> Clear style</Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Remove all text formatting and styling but keep the text content</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button size="sm" variant="outline" onClick={() => setRaw("")}> <Eraser className="h-4 w-4 mr-2"/> Remove all text</Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Remove all text content completely</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <Label>Text styling (select text first)</Label>
-                  <div className="flex gap-2 mt-2">
-                    {[
-                      { key: "bold", label: "Bold", letter: "𝐁", bg: "bg-blue-100 border-blue-400" },
-                      { key: "italic", label: "Italic", letter: "𝐼", bg: "bg-purple-100 border-purple-400" },
-                      { key: "boldItalic", label: "Bold Italic", letter: "𝑩", bg: "bg-indigo-100 border-indigo-400" },
-                      { key: "monospace", label: "Monospace", letter: "𝙼", bg: "bg-green-100 border-green-400" },
-                      { key: "serifBold", label: "Serif Bold", letter: "𝐒", bg: "bg-orange-100 border-orange-400" },
-                    ].map((opt) => {
-                      const isActive = activeStyles.includes(opt.key);
-                      return (
-                        <Button
-                          key={opt.key}
-                          size="sm"
-                          variant={isActive ? "default" : "outline"}
-                          className={isActive ? `${opt.bg} text-gray-800 font-semibold shadow-md` : ""}
-                          title={`${opt.label} ${isActive ? "(ON)" : "(OFF)"}`}
-                          aria-label={`${opt.label} ${isActive ? "active" : "inactive"}`}
-                          onClick={() => toggleStyle(opt.key)}
-                        >
-                          {opt.letter}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button size="sm" onClick={async () => { await navigator.clipboard.writeText(styledForCopy); }}>
-                        <Copy className="h-4 w-4 mr-2" /> Copy for LI
+                      }} aria-label="Clear style">
+                        <Eraser className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Copy styled text to clipboard for pasting into LinkedIn</p>
+                      <p>Clear style</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="icon" variant="outline" onClick={() => setRaw("")} aria-label="Remove all text">
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Remove all text</p>
                     </TooltipContent>
                   </Tooltip>
                 </div>
@@ -917,13 +1009,103 @@ export default function LinkedInPostStudio() {
           </Card>
         </motion.div>
 
-          {/* Right: Visual Setup */}
+          {/* Right: LinkedIn-like Text Preview */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
             <Card className="shadow-xl">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-xl">
-                  <ImageIcon className="h-5 w-5" /> Visual Setup
+                  <ImageIcon className="h-5 w-5" /> Text Preview
                 </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-xl border bg-white p-4">
+                  {/* Minimal LinkedIn feel header */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <img
+                      src="https://optim.tildacdn.net/tild3464-6264-4361-b935-343563663462/-/cover/320x320/center/center/-/format/webp/noroot.png.webp"
+                      alt="Vahagn Ter-Sarkisyan avatar"
+                      className="h-10 w-10 rounded-full object-cover"
+                    />
+                    <div className="space-y-0.5">
+                      <div className="font-semibold leading-tight">Vahagn Ter-Sarkisyan</div>
+                      <div className="text-xs text-slate-500">Generalist • Just now</div>
+                    </div>
+                  </div>
+                  {/* Text content with 3-line clamp when collapsed */}
+                  {(() => {
+                    const text = composed;
+                    const showSeeMore = text.length > 160 || text.split("\n").length > 3;
+                    const clampStyle = textPreviewExpanded
+                      ? {}
+                      : {
+                          display: "-webkit-box",
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: "vertical" as const,
+                          overflow: "hidden",
+                        };
+                    return (
+                      <>
+                        <div
+                          style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", ...clampStyle }}
+                          className="text-[15px] leading-6 text-slate-900"
+                        >
+                          {text}
+                        </div>
+                        {showSeeMore && !textPreviewExpanded && (
+                          <button
+                            className="mt-1 text-sm text-blue-600 hover:underline"
+                            onClick={() => setTextPreviewExpanded(true)}
+                          >
+                            ...see more
+                          </button>
+                        )}
+                        {textPreviewExpanded && (
+                          <button
+                            className="mt-2 text-xs text-slate-500 hover:underline"
+                            onClick={() => setTextPreviewExpanded(false)}
+                          >
+                            Collapse
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+                <div className="flex justify-end mt-3">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" onClick={async () => { await navigator.clipboard.writeText(composed); }}>
+                        <Copy className="h-4 w-4 mr-2" /> Copy for LI
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Copy the current post text to clipboard</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Right: Visual Setup (hidden here; moved below) */}
+          <motion.div className="hidden" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+            <Card className="shadow-xl">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-xl">
+                    <ImageIcon className="h-5 w-5" /> Visual Setup
+                  </CardTitle>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={resetVisualDefaults}>
+                        <Eraser className="h-4 w-4 mr-2" /> Clear style
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Reset visual settings to defaults</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4 sm:space-y-5 max-h-[70vh] overflow-y-auto">
               {/* Controls */}
@@ -1082,7 +1264,7 @@ export default function LinkedInPostStudio() {
                       <div className="space-y-3 pl-6">
                         <div>
                           <Label>Gradient type</Label>
-                          <Select value={gradientType} onValueChange={(v) => setGradientType(v as "linear" | "radial")}>
+                          <Select value={gradientType} onValueChange={(v: "linear" | "radial") => setGradientType(v)}>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="linear">Linear</SelectItem>
@@ -1164,7 +1346,7 @@ export default function LinkedInPostStudio() {
                       <>
                         <div>
                           <Label>Image fit</Label>
-                          <Select value={imageFit} onValueChange={(v) => setImageFit(v as "cover" | "contain")}>
+                          <Select value={imageFit} onValueChange={(v: "cover" | "contain") => setImageFit(v)}>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="cover">Cover (fill, may crop)</SelectItem>
@@ -1296,121 +1478,562 @@ export default function LinkedInPostStudio() {
         </motion.div>
         </div>
 
-        {/* Bottom Row: Preview and Export */}
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="shadow-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <ImageIcon className="h-5 w-5" /> Preview & Export
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {/* Stage */}
-              <div className="w-full overflow-auto rounded-2xl border bg-white p-2 sm:p-4">
-                <div className="mx-auto" style={{ width: ratio.w }}>
-                  <div ref={stageRef} style={stageStyle}>
-                    {/* Background Image */}
-                    {backgroundImage && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          backgroundImage: `url(${backgroundImage})`,
-                          backgroundSize: imageFit,
-                          backgroundPosition: "center",
-                          backgroundRepeat: "no-repeat",
-                          borderRadius: radius,
-                        }}
-                      />
-                    )}
+        {/* Bottom Row: Visual Setup + Create & Export Image */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
+          {/* Bottom Left: Visual Setup */}
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+            <Card className="shadow-xl">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <ImageIcon className="h-5 w-5" /> Visual Setup
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 sm:space-y-5 max-h-[70vh] overflow-y-auto">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <Label>Aspect</Label>
+                    <Select value={ratio.key} onValueChange={(k) => setRatio(RATIO_PRESETS.find((r) => r.key === k) || RATIO_PRESETS[0])}>
+                      <SelectTrigger><SelectValue placeholder="Choose ratio" /></SelectTrigger>
+                      <SelectContent>
+                        {RATIO_PRESETS.map((r) => (
+                          <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
 
-                    {/* Image Dim Overlay */}
-                    {backgroundImage && imageDim > 0 && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          backgroundColor: `rgba(0, 0, 0, ${imageDim})`,
-                          borderRadius: radius,
-                        }}
-                      />
-                    )}
+                    <Label className="mt-3">Font</Label>
+                    <Select value={font} onValueChange={setFont}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {FONT_FAMILIES.map((f) => (
+                          <SelectItem key={f.v} value={f.v}>{f.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
 
-                    {/* Safe margins overlay (for visually centering & crop awareness) */}
-                    {showSafe && (
-                      <div
-                        aria-hidden
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          border: "2px dashed rgba(255,255,255,.25)",
-                          margin: 24,
-                          borderRadius: Math.max(0, radius - 24),
-                          pointerEvents: "none",
-                          zIndex: 10,
-                        }}
-                      />
-                    )}
-
-                    {/* Accent bar */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: 6,
-                        height: "100%",
-                        background: accent,
-                        opacity: 0.5,
-                        zIndex: 5,
-                      }}
-                    />
-
-                    {/* Text block - using either free positioning or normal flow */}
-                    <div style={textBlockStyle}>
-                      {composed}
+                    <div className="mt-4">
+                      <Label>Font size: {fontSize}px</Label>
+                      <div className="mt-2">
+                        <Slider value={[fontSize]} min={24} max={96} step={1} onValueChange={([v]) => setFontSize(v as number)} />
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Line height: {lineHeight.toFixed(2)}</Label>
+                      <div className="mt-2">
+                        <Slider value={[lineHeight]} min={1.0} max={1.8} step={0.05} onValueChange={([v]) => setLineHeight(v as number)} />
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Letter spacing: {letterSpacing.toFixed(2)}px</Label>
+                      <div className="mt-2">
+                        <Slider value={[letterSpacing]} min={-1} max={10} step={0.1} onValueChange={([v]) => setLetterSpacing(v as number)} />
+                      </div>
                     </div>
 
-                    {/* Watermark */}
-                    {showWatermark && (
-                      <div style={{ position: "absolute", right: 16, bottom: 12, opacity: 0.8, fontSize: Math.max(14, fontSize * 0.33) }}>
-                        {watermark}
+                    <div className="space-y-2">
+                      <Label>Align</Label>
+                      <div className="flex items-center gap-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="icon" variant={align === "left" ? "default" : "outline"} onClick={() => setAlign("left")}><AlignLeft className="h-4 w-4" /></Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Align text to the left</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="icon" variant={align === "center" ? "default" : "outline"} onClick={() => setAlign("center")}><AlignCenter className="h-4 w-4" /></Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Center align text</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="icon" variant={align === "right" ? "default" : "outline"} onClick={() => setAlign("right")}><AlignRight className="h-4 w-4" /></Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Align text to the right</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="icon" variant={verticalAlign === "top" ? "default" : "outline"} onClick={() => setVerticalAlign("top")}><ArrowUp className="h-4 w-4" /></Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Align top</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="icon" variant={verticalAlign === "center" ? "default" : "outline"} onClick={() => setVerticalAlign("center")}><AlignVerticalSpaceAround className="h-4 w-4" /></Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Align middle</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="icon" variant={verticalAlign === "bottom" ? "default" : "outline"} onClick={() => setVerticalAlign("bottom")}><ArrowDown className="h-4 w-4" /></Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Align bottom</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Switch id="safe2" checked={showSafe} onCheckedChange={setShowSafe} />
+                        <Label htmlFor="safe2">Show safe margins</Label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label>Layout</Label>
+                    <div>
+                      <Label>Padding: {padding}px</Label>
+                      <div className="mt-2">
+                        <Slider value={[padding]} min={32} max={160} step={4} onValueChange={([v]) => setPadding(v as number)} />
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Corner radius: {radius}px</Label>
+                      <div className="mt-2">
+                        <Slider value={[radius]} min={0} max={64} step={2} onValueChange={([v]) => setRadius(v as number)} />
+                      </div>
+                    </div>
+
+                    <Label className="mt-3">Theme</Label>
+                    {/* Quick gradients */}
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      <button
+                        className="h-8 w-20 rounded-md border border-slate-200"
+                        title="White"
+                        onClick={() => { setUseGradient(false); setBg1('#ffffff'); setBg2('#ffffff'); setFg('#0f172a'); }}
+                        style={{ background: '#ffffff' }}
+                      />
+                      <button
+                        className="h-8 w-20 rounded-md border border-slate-200"
+                        title="Colorful"
+                        onClick={() => { setUseGradient(true); setGradientType('linear'); setGradientAngle(135); setBg1('#8b5cf6'); setBg2('#f59e0b'); setFg('#ffffff'); }}
+                        style={{ background: 'linear-gradient(135deg,#8b5cf6,#f59e0b)' }}
+                      />
+                      <button
+                        className="h-8 w-20 rounded-md border border-slate-200"
+                        title="Dark"
+                        onClick={() => { setUseGradient(true); setGradientType('linear'); setGradientAngle(135); setBg1('#0b0f19'); setBg2('#1e293b'); setFg('#eef2ff'); }}
+                        style={{ background: 'linear-gradient(135deg,#0b0f19,#1e293b)' }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label>BG #1</Label>
+                        <Input type="color" value={bg1} onChange={(e) => setBg1(e.target.value)} />
+                      </div>
+                      <div>
+                        <Label>BG #2</Label>
+                        <Input type="color" value={bg2} onChange={(e) => setBg2(e.target.value)} />
+                      </div>
+                      <div>
+                        <Label>Text</Label>
+                        <Input type="color" value={fg} onChange={(e) => setFg(e.target.value)} />
+                      </div>
+                      <div>
+                        <Label>Accent</Label>
+                        <Input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} />
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Switch id="grad2" checked={useGradient} onCheckedChange={setUseGradient} />
+                        <Label htmlFor="grad2">Gradient background</Label>
+                      </div>
+                      
+                      {useGradient && (
+                        <div className="space-y-3 pl-6">
+                          <div>
+                            <Label>Gradient type</Label>
+                            <Select value={gradientType} onValueChange={(v: "linear" | "radial") => setGradientType(v)}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="linear">Linear</SelectItem>
+                                <SelectItem value="radial">Radial</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          
+                          {gradientType === "linear" && (
+                            <div>
+                              <Label>Gradient angle: {gradientAngle}°</Label>
+                              <div className="mt-2">
+                                <Slider 
+                                  value={[gradientAngle]} 
+                                  min={0} 
+                                  max={360} 
+                                  step={15} 
+                                  onValueChange={([v]) => setGradientAngle(v as number)} 
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+
+                    <div className="mt-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Switch id="wm2" checked={showWatermark} onCheckedChange={setShowWatermark} />
+                        <Label htmlFor="wm2">Watermark</Label>
+                      </div>
+                      {showWatermark && (
+                        <Input placeholder="@yourhandle or brand" value={watermark} onChange={(e) => setWatermark(e.target.value)} />
+                      )}
+                    </div>
+
+                    {/* Image Background */}
+                    <div className="mt-4 space-y-3">
+                    <Label>Background</Label>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                onClick={() => document.getElementById('image-upload-live')?.click()}
+                              >
+                                <Upload className="h-4 w-4 mr-2" />
+                                Upload JPG/PNG
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Upload a background image for your post (JPG or PNG format)</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          {backgroundImage && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="outline" size="icon" onClick={clearImage}>
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Remove background image</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                      </div>
+                      <input
+                        id="image-upload-live"
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        onChange={handleImageUpload}
+                        className="hidden"
+                      />
+                      
+                      {backgroundImage && (
+                        <>
+                          <div>
+                            <Label>Image fit</Label>
+                            <Select value={imageFit} onValueChange={(v: "cover" | "contain") => setImageFit(v)}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="cover">Cover (fill, may crop)</SelectItem>
+                                <SelectItem value="contain">Contain (fit entirely)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          
+                          <div>
+                            <Label>Dim image: {Math.round(imageDim * 100)}%</Label>
+                            <div className="mt-2">
+                              <Slider 
+                                value={[imageDim]} 
+                                min={0} 
+                                max={0.8} 
+                                step={0.05} 
+                                onValueChange={([v]) => setImageDim(v as number)} 
+                              />
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Text Box Overlay */}
+                    {backgroundImage && (
+                      <div className="mt-4 space-y-3">
+                        <Label>Text box</Label>
+                        
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label>Background</Label>
+                            <Input type="color" value={textBoxBg} onChange={(e) => setTextBoxBg(e.target.value)} />
+                          </div>
+                          <div>
+                            <Label>Opacity: {Math.round(textBoxOpacity * 100)}%</Label>
+                            <div className="mt-2">
+                              <Slider 
+                                value={[textBoxOpacity]} 
+                                min={0} 
+                                max={1} 
+                                step={0.05} 
+                                onValueChange={([v]) => setTextBoxOpacity(v as number)} 
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label>Padding: {textBoxPadding}px</Label>
+                            <div className="mt-2">
+                              <Slider 
+                                value={[textBoxPadding]} 
+                                min={0} 
+                                max={64} 
+                                step={4} 
+                                onValueChange={([v]) => setTextBoxPadding(v as number)} 
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <Label>Radius: {textBoxRadius}px</Label>
+                            <div className="mt-2">
+                              <Slider 
+                                value={[textBoxRadius]} 
+                                min={0} 
+                                max={32} 
+                                step={2} 
+                                onValueChange={([v]) => setTextBoxRadius(v as number)} 
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Switch 
+                            id="freepos2" 
+                            checked={enableFreePositioning} 
+                            onCheckedChange={setEnableFreePositioning} 
+                          />
+                          <Label htmlFor="freepos2">Free positioning</Label>
+                          <Move className="h-4 w-4 ml-1" />
+                        </div>
+
+                        {enableFreePositioning && (
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <Label>X offset: {textBoxX}%</Label>
+                                <Slider 
+                                  value={[textBoxX]} 
+                                  min={0} 
+                                  max={100} 
+                                  step={1} 
+                                  onValueChange={([v]) => setTextBoxX(clamp(v as number, 0, 100))} 
+                                />
+                              </div>
+                              <div>
+                                <Label>Y offset: {textBoxY}%</Label>
+                                <Slider 
+                                  value={[textBoxY]} 
+                                  min={0} 
+                                  max={100} 
+                                  step={1} 
+                                  onValueChange={([v]) => setTextBoxY(clamp(v as number, 0, 100))} 
+                                />
+                              </div>
+                            </div>
+                            
+                            <div>
+                              <Label>Width: {textBoxWidth}%</Label>
+                              <Slider 
+                                value={[textBoxWidth]} 
+                                min={20} 
+                                max={100} 
+                                step={5} 
+                                onValueChange={([v]) => setTextBoxWidth(clamp(v as number, 20, 100))} 
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
                 </div>
-              </div>
+                <div className="pt-3">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={resetVisualDefaults}>
+                        <Eraser className="h-4 w-4 mr-2" /> Reset to defaults
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Reset visual settings to defaults</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
 
-              {/* Export buttons */}
-              <div className="flex flex-wrap gap-2 sm:gap-3 justify-center">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button onClick={() => exportAs("png")}> 
-                      <Download className="h-4 w-4 mr-2" /> Export PNG
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Download your post as a PNG image (with transparency support)</p>
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="secondary" onClick={() => exportAs("jpg")}>
-                      <Download className="h-4 w-4 mr-2" /> Export JPG
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Download your post as a JPG image (smaller file size)</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
+          {/* Bottom Right: Create & Export Image */}
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+            <Card className="shadow-xl">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <ImageIcon className="h-5 w-5" /> Create & Export Image
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 sm:space-y-5">
+                {/* Preview Controls */}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex-1 min-w-[220px] max-w-xs">
+                    <Label className="text-sm">Scale: {Math.round(exportPreviewScale * 100)}%</Label>
+                    <Slider 
+                      value={[exportPreviewScale]} 
+                      min={0.25} 
+                      max={1} 
+                      step={0.05} 
+                      onValueChange={([v]) => setExportPreviewScale(v as number)} 
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={fitExportToWidth}>Fit width</Button>
+                    <Button size="sm" variant="outline" onClick={fitExportToHeight}>Fit height</Button>
+                    <div className="text-sm text-slate-600">
+                      {ratio.w} × {ratio.h}px
+                    </div>
+                  </div>
+                </div>
 
-              <div className="text-xs text-slate-500 text-center">
-                Tip: For crisp text on upload, we render at native pixel dimensions with 2× pixel ratio. LinkedIn typically preserves 1080px or 1200px widths well.
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+                {/* Stage */}
+                <div ref={exportContainerRef} className="w-full overflow-auto rounded-2xl border bg-white p-2 sm:p-4 max-h-[420px]">
+                  <div
+                    className="mx-auto"
+                    style={{
+                      width: Math.round(ratio.w * exportPreviewScale),
+                      height: Math.round(ratio.h * exportPreviewScale),
+                    }}
+                  >
+                    <div style={{ transform: `scale(${exportPreviewScale})`, transformOrigin: 'top left' }}>
+                      <div ref={stageRef} style={stageStyle}>
+                        {/* Background Image */}
+                        {backgroundImage && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              inset: 0,
+                              backgroundImage: `url("${backgroundImage}")`,
+                              backgroundSize: imageFit,
+                              backgroundPosition: "center",
+                              backgroundRepeat: "no-repeat",
+                              borderRadius: radius,
+                              zIndex: 1,
+                            }}
+                          />
+                        )}
+
+                        {/* Image Dim Overlay */}
+                        {backgroundImage && imageDim > 0 && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              inset: 0,
+                              backgroundColor: `rgba(0, 0, 0, ${imageDim})`,
+                              borderRadius: radius,
+                              zIndex: 3,
+                            }}
+                          />
+                        )}
+
+                        {/* Safe margins overlay (for visually centering & crop awareness) */}
+                        {showSafe && (
+                          <div
+                            aria-hidden
+                            style={{
+                              position: "absolute",
+                              inset: 0,
+                              border: "2px dashed rgba(255,255,255,.25)",
+                              margin: 24,
+                              borderRadius: Math.max(0, radius - 24),
+                              pointerEvents: "none",
+                              zIndex: 8,
+                            }}
+                          />
+                        )}
+
+                        {/* Accent bar */}
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: 6,
+                            height: "100%",
+                            background: accent,
+                            opacity: 0.5,
+                            zIndex: 5,
+                          }}
+                        />
+
+                        {/* Text block - using either free positioning or normal flow */}
+                        <div style={textBlockStyle}>
+                          {composed}
+                        </div>
+
+                        {/* Watermark */}
+                        {showWatermark && (
+                          <div style={{ position: "absolute", right: 16, bottom: 12, opacity: 0.8, fontSize: Math.max(14, fontSize * 0.33) }}>
+                            {watermark}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Export buttons */}
+                <div className="flex flex-wrap gap-2 sm:gap-3 justify-center">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button onClick={() => exportAs("png")}> 
+                        <Download className="h-4 w-4 mr-2" /> Export PNG
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Download your post as a PNG image (with transparency support)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="secondary" onClick={() => exportAs("jpg")}>
+                        <Download className="h-4 w-4 mr-2" /> Export JPG
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Download your post as a JPG image (smaller file size)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+
+                <div className="text-xs text-slate-500 text-center">
+                  Tip: For crisp text on upload, we render at native pixel dimensions with 2× pixel ratio. LinkedIn typically preserves 1080px or 1200px widths well.
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
 
         {/* Footer */}
         <div className="text-center text-xs text-slate-500 pt-2">
