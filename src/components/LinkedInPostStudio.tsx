@@ -10,8 +10,18 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Download, Copy, Sparkles, Wand2, Image as ImageIcon, Eraser, AlignLeft, AlignCenter, AlignRight, Upload, X, Move } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Download, Copy, Wand2, Image as ImageIcon, Eraser, AlignLeft, AlignCenter, AlignRight, Upload, X, Move, List, ListOrdered, Type, AlignVerticalSpaceAround, ArrowUp, ArrowDown, Smile, Hash } from "lucide-react";
 import * as htmlToImage from "html-to-image";
+
+// --- Popular LinkedIn Emojis -------------------------------------------------
+const POPULAR_EMOJIS = [
+  "📼", "🚀", "💡", "🎯", "📈", "⭐", "🔥", "💪", "👏", "🙌",
+  "✨", "🎉", "💯", "🌟", "🏆", "📊", "💎", "🔑", "⚡", "🎨",
+  "📱", "💻", "🌐", "📺", "🎥", "📸", "🖼️", "🎭", "🎪", "🎨",
+  "❤️", "😍", "🤝", "👍", "👋", "😊", "💙", "🧡", "💚", "💜",
+  "🌍", "🌎", "🌏", "🌱", "🔗", "📢", "📣", "🎁", "🎈", "🎊"
+] as const;
 
 // --- Utilities ---------------------------------------------------------------
 
@@ -139,31 +149,26 @@ const FONT_FAMILIES = [
 const THEME_PRESETS = [
   { name: "Clean Light", bg1: "#ffffff", bg2: "#ffffff", gradient: false, fg: "#0f172a", accent: "#2563eb" },
   { name: "Classic Blue", bg1: "#0ea5e9", bg2: "#0369a1", gradient: true, fg: "#ffffff", accent: "#ffffff" },
-  { name: "Charcoal", bg1: "#0b0f19", bg2: "#0b0f19", gradient: false, fg: "#eef2ff", accent: "#60a5fa" },
+  { name: "Dark Charcoal", bg1: "#0b0f19", bg2: "#1e293b", gradient: true, fg: "#eef2ff", accent: "#60a5fa" },
+  { name: "Midnight", bg1: "#111827", bg2: "#374151", gradient: true, fg: "#f9fafb", accent: "#6ee7b7" },
   { name: "Violet Fade", bg1: "#8b5cf6", bg2: "#6d28d9", gradient: true, fg: "#ffffff", accent: "#ffffff" },
   { name: "Mint", bg1: "#34d399", bg2: "#10b981", gradient: true, fg: "#052e2b", accent: "#052e2b" },
 ] as const;
 
-const TEMPLATES: Record<string, (t: string) => string> = {
-  blank: (t) => t,
-  quote: (t) => `“${t || "Make it simple, but significant."}”\n\n— Your Name`,
-  tip: (t) => `Pro Tip: ${t || "Start by sharing a concrete win before the lesson."}\n\n• Context\n• Action\n• Results`,
-  announcement: (t) => `We’re live! 🚀\n\n${t || "Just shipped a feature that cuts reporting time by 40%."}\n\n🔗 Read more in the first comment.`,
-};
 
 // --- Main Component ----------------------------------------------------------
 export default function LinkedInPostStudio() {
   // Authoring
   const [raw, setRaw] = useState("");
+  const [hashtags, setHashtags] = useState("");
   const [style, setStyle] = useState("bold");
   const [autoEnrich, setAutoEnrich] = useState(true);
-  const [prefix, setPrefix] = useState("");
-  const [suffix, setSuffix] = useState("");
-  const [template, setTemplate] = useState("blank");
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   
   // Text styling states
   const [activeStyles, setActiveStyles] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
 
   // Visuals
   type RatioPreset = (typeof RATIO_PRESETS)[number];
@@ -174,6 +179,7 @@ export default function LinkedInPostStudio() {
   const [fontSize, setFontSize] = useState<number>(48);
   const [lineHeight, setLineHeight] = useState<number>(1.2);
   const [align, setAlign] = useState<"left" | "center" | "right">("left");
+  const [verticalAlign, setVerticalAlign] = useState<"top" | "center" | "bottom">("center");
   const [padding, setPadding] = useState<number>(64);
   const [radius, setRadius] = useState<number>(32);
   const [showWatermark, setShowWatermark] = useState<boolean>(false);
@@ -187,6 +193,8 @@ export default function LinkedInPostStudio() {
   const [fg, setFg] = useState<string>(theme.fg);
   const [accent, setAccent] = useState<string>(theme.accent);
   const [useGradient, setUseGradient] = useState<boolean>(theme.gradient);
+  const [gradientType, setGradientType] = useState<"linear" | "radial">("linear");
+  const [gradientAngle, setGradientAngle] = useState<number>(135);
 
   // Image background
   const [backgroundImage, setBackgroundImage] = useState<string>("");
@@ -205,11 +213,19 @@ export default function LinkedInPostStudio() {
 
   // Derived text
   const composed = useMemo(() => {
-    const base = TEMPLATES[template](raw);
-    const enriched = autoEnrich ? enrichText(base) : base;
-    const withAffixes = [prefix, enriched, suffix].filter(Boolean).join("\n");
-    return withAffixes;
-  }, [raw, autoEnrich, prefix, suffix, template]);
+    const enriched = autoEnrich ? enrichText(raw) : raw;
+    // Add hashtags if they exist, with proper spacing
+    if (hashtags.trim()) {
+      const cleanHashtags = hashtags.trim();
+      // Ensure hashtags start with # if not already present
+      const formattedHashtags = cleanHashtags
+        .split(/\s+/)
+        .map(tag => tag.startsWith('#') ? tag : `#${tag}`)
+        .join(' ');
+      return enriched + (enriched ? '\n\n' : '') + formattedHashtags;
+    }
+    return enriched;
+  }, [raw, autoEnrich, hashtags]);
 
   const styledForCopy = useMemo(() => toFancy(composed, style), [composed, style]);
 
@@ -227,6 +243,129 @@ export default function LinkedInPostStudio() {
 
   const clearImage = () => {
     setBackgroundImage("");
+  };
+
+  // Emoji picker functions
+  const insertEmoji = (emoji: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const newText = raw.substring(0, start) + emoji + raw.substring(end);
+    
+    setRaw(newText);
+    setShowEmojiPicker(false);
+    
+    // Focus back to textarea and position cursor after emoji
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + emoji.length, start + emoji.length);
+    }, 0);
+  };
+
+  // Click outside handler for emoji picker
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    if (showEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showEmojiPicker]);
+
+  // List and text transformation functions
+  const insertBulletList = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = raw.substring(start, end);
+    
+    let newText;
+    if (selectedText) {
+      // Convert selected lines to bullet points
+      const lines = selectedText.split('\n');
+      const bulletLines = lines.map(line => line.trim() ? `• ${line.trim()}` : line).join('\n');
+      newText = raw.substring(0, start) + bulletLines + raw.substring(end);
+    } else {
+      // Insert bullet point at cursor
+      newText = raw.substring(0, start) + '• ' + raw.substring(end);
+    }
+    
+    setRaw(newText);
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + 2, start + 2);
+    }, 0);
+  };
+
+  const insertNumberedList = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = raw.substring(start, end);
+    
+    let newText;
+    if (selectedText) {
+      // Convert selected lines to numbered list
+      const lines = selectedText.split('\n');
+      const numberedLines = lines.map((line, index) => {
+        return line.trim() ? `${index + 1}. ${line.trim()}` : line;
+      }).join('\n');
+      newText = raw.substring(0, start) + numberedLines + raw.substring(end);
+    } else {
+      // Insert numbered point at cursor
+      newText = raw.substring(0, start) + '1. ' + raw.substring(end);
+    }
+    
+    setRaw(newText);
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + 3, start + 3);
+    }, 0);
+  };
+
+  const transformCase = (caseType: 'upper' | 'lower' | 'sentence') => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    
+    if (start === end) return; // No selection
+
+    const selectedText = raw.substring(start, end);
+    let transformedText;
+    
+    switch (caseType) {
+      case 'upper':
+        transformedText = selectedText.toUpperCase();
+        break;
+      case 'lower':
+        transformedText = selectedText.toLowerCase();
+        break;
+      case 'sentence':
+        transformedText = selectedText.toLowerCase().replace(/(^\w|\.\s+\w)/g, (letter) => letter.toUpperCase());
+        break;
+      default:
+        transformedText = selectedText;
+    }
+    
+    const newText = raw.substring(0, start) + transformedText + raw.substring(end);
+    
+    setRaw(newText);
+    setTimeout(() => {
+      textarea.setSelectionRange(start, start + transformedText.length);
+      textarea.focus();
+    }, 0);
   };
 
   // Text styling functions
@@ -291,10 +430,9 @@ export default function LinkedInPostStudio() {
       try {
         const s = JSON.parse(saved);
         setRaw(s.raw || "");
+        setHashtags(s.hashtags || "");
         setStyle(s.style || "bold");
         setAutoEnrich(!!s.autoEnrich);
-        setPrefix(s.prefix || "");
-        setSuffix(s.suffix || "");
         const rp = RATIO_PRESETS.find((r) => r.key === s.ratioKey) || RATIO_PRESETS[0];
         setRatio(rp);
         setFont(s.font || FONT_FAMILIES[0].v);
@@ -313,7 +451,9 @@ export default function LinkedInPostStudio() {
         setFg(s.fg || t.fg);
         setAccent(s.accent || t.accent);
         setUseGradient(s.useGradient ?? t.gradient);
-        setTemplate(s.template || "blank");
+        setVerticalAlign(s.verticalAlign || "center");
+        setGradientType(s.gradientType || "linear");
+        setGradientAngle(s.gradientAngle ?? 135);
         
         // v2 features (only if not fallback from v1)
         if (!isV1Fallback) {
@@ -336,10 +476,9 @@ export default function LinkedInPostStudio() {
   useEffect(() => {
     const payload = {
       raw,
+      hashtags,
       style,
       autoEnrich,
-      prefix,
-      suffix,
       ratioKey: ratio.key,
       font,
       fontSize,
@@ -356,7 +495,9 @@ export default function LinkedInPostStudio() {
       fg,
       accent,
       useGradient,
-      template,
+      verticalAlign,
+      gradientType,
+      gradientAngle,
       // v2 features
       backgroundImage,
       imageFit,
@@ -373,10 +514,9 @@ export default function LinkedInPostStudio() {
     localStorage.setItem("lps_v2", JSON.stringify(payload));
   }, [
     raw,
+    hashtags,
     style,
     autoEnrich,
-    prefix,
-    suffix,
     ratio,
     font,
     fontSize,
@@ -393,7 +533,9 @@ export default function LinkedInPostStudio() {
     fg,
     accent,
     useGradient,
-    template,
+    verticalAlign,
+    gradientType,
+    gradientAngle,
     backgroundImage,
     imageFit,
     imageDim,
@@ -418,8 +560,9 @@ export default function LinkedInPostStudio() {
     const width = ratio.w;
     const height = ratio.h;
 
+
     const opts = {
-      backgroundColor: bg1,
+      backgroundColor: backgroundImage ? "transparent" : bg1,
       width,
       height,
       style: {
@@ -430,28 +573,55 @@ export default function LinkedInPostStudio() {
       },
       pixelRatio: scale,
       quality: 0.98,
+      // Ensure background images are captured
+      allowTaint: true,
+      useCORS: true,
     } as const;
 
-    const fileBase = kebab(styledForCopy.replace(/\n+/g, " ")) + `-${ratio.key}`;
+    const fileBase = kebab(composed.replace(/\n+/g, " ")) + `-${ratio.key}`;
 
-    if (type === "png") {
-      const dataUrl = await htmlToImage.toPng(node, opts);
-      const a = document.createElement("a");
-      a.href = dataUrl;
-      a.download = `${fileBase}.png`;
-      a.click();
-    } else {
-      const dataUrl = await htmlToImage.toJpeg(node, { ...opts, quality: 0.92 });
-      const a = document.createElement("a");
-      a.href = dataUrl;
-      a.download = `${fileBase}.jpg`;
-      a.click();
+    try {
+      if (type === "png") {
+        const dataUrl = await htmlToImage.toPng(node, opts);
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = `${fileBase}.png`;
+        a.click();
+      } else {
+        const dataUrl = await htmlToImage.toJpeg(node, { ...opts, quality: 0.92 });
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = `${fileBase}.jpg`;
+        a.click();
+      }
+    } catch (error) {
+      console.error("Export failed:", error);
+      // Fallback: try without CORS options
+      const fallbackOpts = { ...opts };
+      delete (fallbackOpts as Record<string, unknown>).allowTaint;
+      delete (fallbackOpts as Record<string, unknown>).useCORS;
+      
+      try {
+        if (type === "png") {
+          const dataUrl = await htmlToImage.toPng(node, fallbackOpts);
+          const a = document.createElement("a");
+          a.href = dataUrl;
+          a.download = `${fileBase}.png`;
+          a.click();
+        } else {
+          const dataUrl = await htmlToImage.toJpeg(node, { ...fallbackOpts, quality: 0.92 });
+          const a = document.createElement("a");
+          a.href = dataUrl;
+          a.download = `${fileBase}.jpg`;
+          a.click();
+        }
+      } catch (fallbackError) {
+        console.error("Fallback export also failed:", fallbackError);
+        alert("Export failed. Please try again or check console for details.");
+      }
     }
   }
 
-  function applyTemplate(name: string) {
-    setTemplate(name);
-  }
 
   function applyTheme(p: ThemePreset) {
     setTheme(p);
@@ -464,22 +634,34 @@ export default function LinkedInPostStudio() {
 
   // Stage styles
   const stageStyle = useMemo(
-    () => ({
-      width: `${ratio.w}px`,
-      height: `${ratio.h}px`,
-      color: fg,
-      fontFamily: font,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center",
-      background: useGradient ? `linear-gradient(135deg, ${bg1}, ${bg2})` : (bg1 as string),
-      borderRadius: radius,
-      position: "relative" as const,
-      overflow: "hidden" as const,
-      padding: padding,
-      boxShadow: "0 20px 60px rgba(0,0,0,.14)",
-    }),
-    [ratio, fg, font, align, useGradient, bg1, bg2, radius, padding]
+    () => {
+      const getGradientBackground = () => {
+        if (!useGradient) return bg1;
+        
+        if (gradientType === "radial") {
+          return `radial-gradient(circle, ${bg1}, ${bg2})`;
+        } else {
+          return `linear-gradient(${gradientAngle}deg, ${bg1}, ${bg2})`;
+        }
+      };
+      
+      return {
+        width: `${ratio.w}px`,
+        height: `${ratio.h}px`,
+        color: fg,
+        fontFamily: font,
+        display: "flex",
+        alignItems: verticalAlign === "top" ? "flex-start" : verticalAlign === "bottom" ? "flex-end" : "center",
+        justifyContent: align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center",
+        background: getGradientBackground(),
+        borderRadius: radius,
+        position: "relative" as const,
+        overflow: "hidden" as const,
+        padding: padding,
+        boxShadow: "0 20px 60px rgba(0,0,0,.14)",
+      };
+    },
+    [ratio, fg, font, align, verticalAlign, useGradient, gradientType, gradientAngle, bg1, bg2, radius, padding]
   );
 
   const textBlockStyle = useMemo(() => {
@@ -515,10 +697,11 @@ export default function LinkedInPostStudio() {
   }, [fontSize, lineHeight, align, enableFreePositioning, textBoxX, textBoxY, textBoxWidth, ratio, padding, textBoxBg, textBoxOpacity, textBoxPadding, textBoxRadius, backgroundImage]);
 
   return (
-    <div className="w-full min-h-screen bg-slate-50">
-      <div className="max-w-7xl mx-auto p-6 space-y-6">
+    <TooltipProvider delayDuration={200}>
+      <div className="w-full min-h-screen bg-slate-50">
+      <div className="max-w-7xl mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
         {/* Top Row: Text Editor and Visual Setup */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
           {/* Left: Text Editor */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
             <Card className="shadow-xl">
@@ -527,17 +710,7 @@ export default function LinkedInPostStudio() {
                   <Wand2 className="h-5 w-5" /> Text Composer
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label htmlFor="prefix">Prefix (optional)</Label>
-                  <Input id="prefix" placeholder="Hook / emoji / context" value={prefix} onChange={(e) => setPrefix(e.target.value)} />
-                </div>
-                <div>
-                  <Label htmlFor="suffix">Suffix (optional)</Label>
-                  <Input id="suffix" placeholder="CTA, hashtags, etc." value={suffix} onChange={(e) => setSuffix(e.target.value)} />
-                </div>
-              </div>
+              <CardContent className="space-y-3 sm:space-y-4">
 
               <div className="space-y-2">
                 <Label>Main text</Label>
@@ -550,21 +723,151 @@ export default function LinkedInPostStudio() {
                 />
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <Button size="sm" variant="secondary" onClick={() => setRaw(enrichText(raw))}>
-                  <Sparkles className="h-4 w-4 mr-2" /> Enrich once
-                </Button>
-                <div className="flex items-center gap-2">
-                  <Switch id="autoenrich" checked={autoEnrich} onCheckedChange={setAutoEnrich} />
-                  <Label htmlFor="autoenrich">Auto-enrich while typing</Label>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Hash className="h-4 w-4" />
+                  Hashtags (optional)
+                </Label>
+                <Input 
+                  placeholder="marketing socialmedia business" 
+                  value={hashtags} 
+                  onChange={(e) => setHashtags(e.target.value)}
+                  className="text-sm"
+                />
+                <div className="text-xs text-slate-500">
+                  Add hashtags separated by spaces. The # symbol will be added automatically.
                 </div>
-                <Button size="sm" variant="outline" onClick={() => {
-                  // Remove Unicode styling from raw text only, don't add prefix/suffix
-                  const unstyledText = toNormal(raw);
-                  setRaw(unstyledText);
-                  setActiveStyles([]);
-                }}> <Eraser className="h-4 w-4 mr-2"/> Clear style</Button>
-                <Button size="sm" variant="outline" onClick={() => setRaw("")}> <Eraser className="h-4 w-4 mr-2"/> Clear</Button>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <Switch id="autoenrich" checked={autoEnrich} onCheckedChange={setAutoEnrich} />
+                    <Label htmlFor="autoenrich">Auto enrich</Label>
+                  </div>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                          className="w-12"
+                        >
+                          <Smile className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Insert emoji at cursor position</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    {showEmojiPicker && (
+                      <div 
+                        ref={emojiPickerRef}
+                        className="absolute top-full left-0 mt-2 p-3 bg-white border border-slate-200 rounded-lg shadow-lg z-50 w-80"
+                      >
+                        <div className="text-sm font-medium mb-2 text-slate-700">Popular LinkedIn Emojis</div>
+                        <div className="grid grid-cols-10 gap-1 max-h-32 overflow-y-auto">
+                          {POPULAR_EMOJIS.map((emoji, index) => (
+                            <button
+                              key={index}
+                              onClick={() => insertEmoji(emoji)}
+                              className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded transition-colors text-lg"
+                              title={`Insert ${emoji}`}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-2 pt-2 border-t border-slate-200">
+                          <button
+                            onClick={() => setShowEmojiPicker(false)}
+                            className="text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={insertBulletList}>
+                        <List className="h-4 w-4 mr-2" /> Bullet List
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Convert selected lines to bullet points or insert a new bullet point</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={insertNumberedList}>
+                        <ListOrdered className="h-4 w-4 mr-2" /> Numbered List
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Convert selected lines to numbered list or insert a new numbered item</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={() => transformCase('upper')}>
+                        <Type className="h-4 w-4 mr-2" /> UPPER
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Convert selected text to UPPERCASE</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={() => transformCase('lower')}>
+                        <Type className="h-4 w-4 mr-2" /> lower
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Convert selected text to lowercase</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={() => transformCase('sentence')}>
+                        <Type className="h-4 w-4 mr-2" /> Sentence case
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Convert selected text to Sentence case (first letter of each sentence capitalized)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={() => {
+                        // Remove Unicode styling from raw text only
+                        const unstyledText = toNormal(raw);
+                        setRaw(unstyledText);
+                        setActiveStyles([]);
+                      }}> <Eraser className="h-4 w-4 mr-2"/> Clear style</Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Remove all text formatting and styling but keep the text content</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={() => setRaw("")}> <Eraser className="h-4 w-4 mr-2"/> Remove all text</Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Remove all text content completely</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
               </div>
 
               <div className="space-y-3">
@@ -596,9 +899,16 @@ export default function LinkedInPostStudio() {
                   </div>
                 </div>
                 <div className="flex justify-end">
-                  <Button size="sm" onClick={async () => { await navigator.clipboard.writeText(styledForCopy); }}>
-                    <Copy className="h-4 w-4 mr-2" /> Copy for LI
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" onClick={async () => { await navigator.clipboard.writeText(styledForCopy); }}>
+                        <Copy className="h-4 w-4 mr-2" /> Copy for LI
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Copy styled text to clipboard for pasting into LinkedIn</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
               </div>
 
@@ -615,9 +925,9 @@ export default function LinkedInPostStudio() {
                   <ImageIcon className="h-5 w-5" /> Visual Setup
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-5">
+              <CardContent className="space-y-4 sm:space-y-5 max-h-[70vh] overflow-y-auto">
               {/* Controls */}
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-3">
                   <Label>Aspect ratio</Label>
                   <Select value={ratio.key} onValueChange={(k) => setRatio(RATIO_PRESETS.find((r) => r.key === k) || RATIO_PRESETS[0])}>
@@ -641,27 +951,89 @@ export default function LinkedInPostStudio() {
 
                   <div className="mt-4">
                     <Label>Font size: {fontSize}px</Label>
-                    <Slider value={[fontSize]} min={24} max={96} step={1} onValueChange={([v]) => setFontSize(v as number)} />
+                    <div className="mt-2">
+                      <Slider value={[fontSize]} min={24} max={96} step={1} onValueChange={([v]) => setFontSize(v as number)} />
+                    </div>
                   </div>
                   <div>
                     <Label>Line height: {lineHeight.toFixed(2)}</Label>
-                    <Slider value={[lineHeight]} min={1.0} max={1.8} step={0.05} onValueChange={([v]) => setLineHeight(v as number)} />
+                    <div className="mt-2">
+                      <Slider value={[lineHeight]} min={1.0} max={1.8} step={0.05} onValueChange={([v]) => setLineHeight(v as number)} />
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2 mt-2">
-                    <Button size="icon" variant={align === "left" ? "default" : "outline"} onClick={() => setAlign("left")}><AlignLeft className="h-4 w-4" /></Button>
-                    <Button size="icon" variant={align === "center" ? "default" : "outline"} onClick={() => setAlign("center")}><AlignCenter className="h-4 w-4" /></Button>
-                    <Button size="icon" variant={align === "right" ? "default" : "outline"} onClick={() => setAlign("right")}><AlignRight className="h-4 w-4" /></Button>
+                  <div className="space-y-2">
+                    <Label>Text alignment</Label>
+                    <div className="flex items-center gap-2">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="icon" variant={align === "left" ? "default" : "outline"} onClick={() => setAlign("left")}><AlignLeft className="h-4 w-4" /></Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Align text to the left</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="icon" variant={align === "center" ? "default" : "outline"} onClick={() => setAlign("center")}><AlignCenter className="h-4 w-4" /></Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Center align text</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="icon" variant={align === "right" ? "default" : "outline"} onClick={() => setAlign("right")}><AlignRight className="h-4 w-4" /></Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Align text to the right</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Vertical alignment</Label>
+                    <div className="flex items-center gap-2">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="icon" variant={verticalAlign === "top" ? "default" : "outline"} onClick={() => setVerticalAlign("top")}><ArrowUp className="h-4 w-4" /></Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Align text to the top</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="icon" variant={verticalAlign === "center" ? "default" : "outline"} onClick={() => setVerticalAlign("center")}><AlignVerticalSpaceAround className="h-4 w-4" /></Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Center align text vertically</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="icon" variant={verticalAlign === "bottom" ? "default" : "outline"} onClick={() => setVerticalAlign("bottom")}><ArrowDown className="h-4 w-4" /></Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Align text to the bottom</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </div>
 
                   <div className="mt-4">
                     <Label>Padding: {padding}px</Label>
-                    <Slider value={[padding]} min={32} max={160} step={4} onValueChange={([v]) => setPadding(v as number)} />
+                    <div className="mt-2">
+                      <Slider value={[padding]} min={32} max={160} step={4} onValueChange={([v]) => setPadding(v as number)} />
+                    </div>
                   </div>
 
                   <div>
                     <Label>Corner radius: {radius}px</Label>
-                    <Slider value={[radius]} min={0} max={64} step={2} onValueChange={([v]) => setRadius(v as number)} />
+                    <div className="mt-2">
+                      <Slider value={[radius]} min={0} max={64} step={2} onValueChange={([v]) => setRadius(v as number)} />
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2 mt-2">
@@ -672,7 +1044,7 @@ export default function LinkedInPostStudio() {
 
                 <div className="space-y-3">
                   <Label>Theme presets</Label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {THEME_PRESETS.map((p) => (
                       <button key={p.name} onClick={() => applyTheme(p)} className="rounded-xl overflow-hidden border border-slate-200">
                         <div className="h-12 w-full" style={{ background: p.gradient ? `linear-gradient(135deg, ${p.bg1}, ${p.bg2})` : p.bg1 }} />
@@ -700,19 +1072,43 @@ export default function LinkedInPostStudio() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 mt-2">
-                    <Switch id="grad" checked={useGradient} onCheckedChange={setUseGradient} />
-                    <Label htmlFor="grad">Use gradient background</Label>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Switch id="grad" checked={useGradient} onCheckedChange={setUseGradient} />
+                      <Label htmlFor="grad">Use gradient background</Label>
+                    </div>
+                    
+                    {useGradient && (
+                      <div className="space-y-3 pl-6">
+                        <div>
+                          <Label>Gradient type</Label>
+                          <Select value={gradientType} onValueChange={(v) => setGradientType(v as "linear" | "radial")}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="linear">Linear</SelectItem>
+                              <SelectItem value="radial">Radial</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        
+                        {gradientType === "linear" && (
+                          <div>
+                            <Label>Gradient angle: {gradientAngle}°</Label>
+                            <div className="mt-2">
+                              <Slider 
+                                value={[gradientAngle]} 
+                                min={0} 
+                                max={360} 
+                                step={15} 
+                                onValueChange={([v]) => setGradientAngle(v as number)} 
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  <div className="mt-4 space-y-2">
-                    <Label>Template</Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {Object.keys(TEMPLATES).map((t) => (
-                        <Button key={t} variant={template === t ? "default" : "outline"} onClick={() => applyTemplate(t)}>{t}</Button>
-                      ))}
-                    </div>
-                  </div>
 
                   <div className="mt-4 space-y-2">
                     <div className="flex items-center gap-2">
@@ -728,18 +1124,32 @@ export default function LinkedInPostStudio() {
                   <div className="mt-4 space-y-3">
                     <Label>Background Image</Label>
                     <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => document.getElementById('image-upload')?.click()}
-                        className="flex-1"
-                      >
-                        <Upload className="h-4 w-4 mr-2" />
-                        Upload JPG/PNG
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            onClick={() => document.getElementById('image-upload')?.click()}
+                            className="flex-1"
+                          >
+                            <Upload className="h-4 w-4 mr-2" />
+                            Upload JPG/PNG
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Upload a background image for your post (JPG or PNG format)</p>
+                        </TooltipContent>
+                      </Tooltip>
                       {backgroundImage && (
-                        <Button variant="outline" size="icon" onClick={clearImage}>
-                          <X className="h-4 w-4" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="outline" size="icon" onClick={clearImage}>
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Remove background image</p>
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                     </div>
                     <input
@@ -765,13 +1175,15 @@ export default function LinkedInPostStudio() {
                         
                         <div>
                           <Label>Dim image: {Math.round(imageDim * 100)}%</Label>
-                          <Slider 
-                            value={[imageDim]} 
-                            min={0} 
-                            max={0.8} 
-                            step={0.05} 
-                            onValueChange={([v]) => setImageDim(v as number)} 
-                          />
+                          <div className="mt-2">
+                            <Slider 
+                              value={[imageDim]} 
+                              min={0} 
+                              max={0.8} 
+                              step={0.05} 
+                              onValueChange={([v]) => setImageDim(v as number)} 
+                            />
+                          </div>
                         </div>
                       </>
                     )}
@@ -789,36 +1201,42 @@ export default function LinkedInPostStudio() {
                         </div>
                         <div>
                           <Label>Opacity: {Math.round(textBoxOpacity * 100)}%</Label>
-                          <Slider 
-                            value={[textBoxOpacity]} 
-                            min={0} 
-                            max={1} 
-                            step={0.05} 
-                            onValueChange={([v]) => setTextBoxOpacity(v as number)} 
-                          />
+                          <div className="mt-2">
+                            <Slider 
+                              value={[textBoxOpacity]} 
+                              min={0} 
+                              max={1} 
+                              step={0.05} 
+                              onValueChange={([v]) => setTextBoxOpacity(v as number)} 
+                            />
+                          </div>
                         </div>
                       </div>
                       
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <Label>Padding: {textBoxPadding}px</Label>
-                          <Slider 
-                            value={[textBoxPadding]} 
-                            min={0} 
-                            max={64} 
-                            step={4} 
-                            onValueChange={([v]) => setTextBoxPadding(v as number)} 
-                          />
+                          <div className="mt-2">
+                            <Slider 
+                              value={[textBoxPadding]} 
+                              min={0} 
+                              max={64} 
+                              step={4} 
+                              onValueChange={([v]) => setTextBoxPadding(v as number)} 
+                            />
+                          </div>
                         </div>
                         <div>
                           <Label>Radius: {textBoxRadius}px</Label>
-                          <Slider 
-                            value={[textBoxRadius]} 
-                            min={0} 
-                            max={32} 
-                            step={2} 
-                            onValueChange={([v]) => setTextBoxRadius(v as number)} 
-                          />
+                          <div className="mt-2">
+                            <Slider 
+                              value={[textBoxRadius]} 
+                              min={0} 
+                              max={32} 
+                              step={2} 
+                              onValueChange={([v]) => setTextBoxRadius(v as number)} 
+                            />
+                          </div>
                         </div>
                       </div>
 
@@ -888,7 +1306,7 @@ export default function LinkedInPostStudio() {
             </CardHeader>
             <CardContent className="space-y-5">
               {/* Stage */}
-              <div className="w-full overflow-auto rounded-2xl border bg-white p-4">
+              <div className="w-full overflow-auto rounded-2xl border bg-white p-2 sm:p-4">
                 <div className="mx-auto" style={{ width: ratio.w }}>
                   <div ref={stageRef} style={stageStyle}>
                     {/* Background Image */}
@@ -950,7 +1368,7 @@ export default function LinkedInPostStudio() {
 
                     {/* Text block - using either free positioning or normal flow */}
                     <div style={textBlockStyle}>
-                      {styledForCopy}
+                      {composed}
                     </div>
 
                     {/* Watermark */}
@@ -964,13 +1382,27 @@ export default function LinkedInPostStudio() {
               </div>
 
               {/* Export buttons */}
-              <div className="flex flex-wrap gap-3 justify-center">
-                <Button onClick={() => exportAs("png")}> 
-                  <Download className="h-4 w-4 mr-2" /> Export PNG
-                </Button>
-                <Button variant="secondary" onClick={() => exportAs("jpg")}>
-                  <Download className="h-4 w-4 mr-2" /> Export JPG
-                </Button>
+              <div className="flex flex-wrap gap-2 sm:gap-3 justify-center">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button onClick={() => exportAs("png")}> 
+                      <Download className="h-4 w-4 mr-2" /> Export PNG
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Download your post as a PNG image (with transparency support)</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="secondary" onClick={() => exportAs("jpg")}>
+                      <Download className="h-4 w-4 mr-2" /> Export JPG
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Download your post as a JPG image (smaller file size)</p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
 
               <div className="text-xs text-slate-500 text-center">
@@ -982,9 +1414,10 @@ export default function LinkedInPostStudio() {
 
         {/* Footer */}
         <div className="text-center text-xs text-slate-500 pt-2">
-          Built for faster LinkedIn posting: enrich → copy → image export. Save your favorite theme as defaults (auto-saved locally).
+          🌴 Vibe-coded in Pasadena, California, by <a href="https://tervahagn.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline">Vahagn Ter-Sarkisyan</a> and open for free of charge use.
         </div>
       </div>
     </div>
+    </TooltipProvider>
   );
 }
