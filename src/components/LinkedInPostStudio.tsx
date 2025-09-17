@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,8 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Download, Copy, Wand2, Image as ImageIcon, Eraser, AlignLeft, AlignCenter, AlignRight, Upload, X, Move, List, ListOrdered, Type, AlignVerticalSpaceAround, ArrowUp, ArrowDown, Smile, Hash, Underline as UnderlineIcon, Strikethrough } from "lucide-react";
-import * as htmlToImage from "html-to-image";
+import { Download, Copy, Wand2, Image as ImageIcon, Eraser, AlignLeft, AlignCenter, AlignRight, Upload, X, Move, List, ListOrdered, AlignVerticalSpaceAround, ArrowUp, ArrowDown, Smile, Hash, Underline as UnderlineIcon, Strikethrough } from "lucide-react";
 
 // --- Popular LinkedIn Emojis -------------------------------------------------
 const POPULAR_EMOJIS = [
@@ -248,7 +248,6 @@ export default function LinkedInPostStudio() {
     return enriched;
   }, [raw, autoEnrich, hashtags]);
 
-  const styledForCopy = useMemo(() => toFancy(composed, style), [composed, style]);
 
   // Image upload handler
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -567,7 +566,7 @@ export default function LinkedInPostStudio() {
     };
     try {
       localStorage.setItem("lps_v2", JSON.stringify(payload));
-    } catch (err) {
+    } catch {
       // Avoid crashing the UI if storage quota is exceeded (e.g., Safari private mode or large previous items)
       try {
         // Attempt to remove old large key and retry once
@@ -582,6 +581,7 @@ export default function LinkedInPostStudio() {
   }, [
     raw,
     hashtags,
+    letterSpacing,
     style,
     autoEnrich,
     ratio,
@@ -647,8 +647,8 @@ export default function LinkedInPostStudio() {
         if (r <= 0) return; 
         ctx.save();
         ctx.beginPath();
-        if ((ctx as any).roundRect) {
-          (ctx as any).roundRect(x, y, w, h, r);
+        if ((ctx as CanvasRenderingContext2D & { roundRect?: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect) {
+          (ctx as CanvasRenderingContext2D & { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect(x, y, w, h, r);
         } else {
           const rr = Math.min(r, w / 2, h / 2);
           ctx.moveTo(x + rr, y);
@@ -817,8 +817,8 @@ export default function LinkedInPostStudio() {
       // Compute box rect (x,y,w,h) and text origin based on positioning/alignment
       let boxX = padding;
       let boxY = 0;
-      let boxW = maxBoxWidth;
-      let boxH = textHeight + 2 * boxPadding;
+      const boxW = maxBoxWidth;
+      const boxH = textHeight + 2 * boxPadding;
 
       if (enableFreePositioning) {
         const centerX = width / 2 + (textBoxX - 50) * (width / 100);
@@ -1254,10 +1254,12 @@ export default function LinkedInPostStudio() {
                 <div className="rounded-xl border bg-white p-4">
                   {/* Minimal LinkedIn feel header */}
                   <div className="flex items-center gap-3 mb-3">
-                    <img
+                    <Image
                       src="https://optim.tildacdn.net/tild3464-6264-4361-b935-343563663462/-/cover/320x320/center/center/-/format/webp/noroot.png.webp"
                       alt="Vahagn Ter-Sarkisyan avatar"
                       className="h-10 w-10 rounded-full object-cover"
+                      width={40}
+                      height={40}
                     />
                     <div className="space-y-0.5">
                       <div className="font-semibold leading-tight">Vahagn Ter-Sarkisyan</div>
