@@ -1,17 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, IBM_Plex_Sans, Poppins } from "next/font/google";
-import { Geist, Geist_Mono } from "geist/font";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 const inter = Inter({
   variable: "--font-inter",
@@ -43,7 +33,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} ${ibmPlexSans.variable} ${poppins.variable} antialiased`}
+        className={`${inter.variable} ${ibmPlexSans.variable} ${poppins.variable} antialiased`}
       >
         {children}
       </body>

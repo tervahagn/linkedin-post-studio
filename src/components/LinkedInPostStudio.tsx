@@ -644,7 +644,7 @@ export default function LinkedInPostStudio() {
 
       // Helper: rounded-rect clip with cross-browser support
       function clipRoundedRect(x: number, y: number, w: number, h: number, r: number) {
-        if (r <= 0) return; 
+        if (r <= 0 || !ctx) return;
         ctx.save();
         ctx.beginPath();
         if ((ctx as CanvasRenderingContext2D & { roundRect?: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect) {
@@ -668,7 +668,7 @@ export default function LinkedInPostStudio() {
       if (backgroundImage) {
         try {
           // Load and draw background image directly - no data URL issues
-          const img = new Image();
+          const img = document.createElement('img') as HTMLImageElement;
           img.crossOrigin = 'anonymous';
 
           await new Promise<void>((resolve, reject) => {
@@ -790,6 +790,7 @@ export default function LinkedInPostStudio() {
           const words = para.split(/(\s+)/); // keep spaces to preserve spacing
           let line = '';
           const measure = (s: string) => {
+            if (!ctx) return 0;
             if (!letterSpace) return ctx.measureText(s).width;
             // approximate letter spacing by adding extra width per character (excluding spaces)
             const base = ctx.measureText(s).width;
