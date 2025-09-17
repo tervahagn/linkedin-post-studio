@@ -140,9 +140,9 @@ const RATIO_PRESETS = [
 const FONT_FAMILIES = [
   { v: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif", label: "System Sans" },
   { v: "Georgia, 'Times New Roman', Times, serif", label: "Serif" },
-  { v: "'Inter', ui-sans-serif, system-ui", label: "Inter" },
-  { v: "'IBM Plex Sans', ui-sans-serif, system-ui", label: "IBM Plex Sans" },
-  { v: "'Poppins', ui-sans-serif, system-ui", label: "Poppins" },
+  { v: "var(--font-inter), ui-sans-serif, system-ui", label: "Inter" },
+  { v: "var(--font-ibm-plex-sans), ui-sans-serif, system-ui", label: "IBM Plex Sans" },
+  { v: "var(--font-poppins), ui-sans-serif, system-ui", label: "Poppins" },
 ] as const;
 
 const THEME_PRESETS = [
@@ -623,90 +623,275 @@ export default function LinkedInPostStudio() {
     const node = stageRef.current;
     if (!node) return;
 
-    // Wait for any images to load before exporting
-    if (backgroundImage) {
-      const images = node.querySelectorAll('img');
-      await Promise.all(
-        Array.from(images).map(img => {
-          if (img.complete) return Promise.resolve();
-          return new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-            // Set a timeout to prevent hanging
-            setTimeout(reject, 5000);
-          });
-        })
-      );
-    }
-
     const scale = 2; // retina crispness
     const width = ratio.w;
     const height = ratio.h;
-
-    const opts = {
-      backgroundColor: backgroundImage ? "transparent" : bg1,
-      width,
-      height,
-      style: {
-        transform: `scale(${scale})`,
-        transformOrigin: "top left",
-        width: `${width / scale}px`,
-        height: `${height / scale}px`,
-      },
-      pixelRatio: scale,
-      quality: 0.98,
-      // Enhanced options for better image capture
-      allowTaint: true,
-      useCORS: true,
-      skipAutoScale: true,
-      preferredFontFormat: 'woff2',
-    } as const;
-
     const fileBase = kebab(composed.replace(/\n+/g, " ")) + `-${ratio.key}`;
 
     try {
-      if (type === "png") {
-        const dataUrl = await htmlToImage.toPng(node, opts);
-        const a = document.createElement("a");
-        a.href = dataUrl;
-        a.download = `${fileBase}.png`;
-        a.click();
-      } else {
-        const dataUrl = await htmlToImage.toJpeg(node, { ...opts, quality: 0.92 });
-        const a = document.createElement("a");
-        a.href = dataUrl;
-        a.download = `${fileBase}.jpg`;
-        a.click();
+      // Create canvas for manual composition - this solves the data URL export issue
+      const canvas = document.createElement('canvas');
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) throw new Error('Could not create canvas context');
+
+      // Set high-quality rendering
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.scale(scale, scale);
+
+      // Helper: rounded-rect clip with cross-browser support
+      function clipRoundedRect(x: number, y: number, w: number, h: number, r: number) {
+        if (r <= 0) return; 
+        ctx.save();
+        ctx.beginPath();
+        if ((ctx as any).roundRect) {
+          (ctx as any).roundRect(x, y, w, h, r);
+        } else {
+          const rr = Math.min(r, w / 2, h / 2);
+          ctx.moveTo(x + rr, y);
+          ctx.lineTo(x + w - rr, y);
+          ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+          ctx.lineTo(x + w, y + h - rr);
+          ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+          ctx.lineTo(x + rr, y + h);
+          ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+          ctx.lineTo(x, y + rr);
+          ctx.quadraticCurveTo(x, y, x + rr, y);
+        }
+        ctx.clip();
       }
-    } catch (error) {
-      console.error("Export failed:", error);
-      // Fallback: try without enhanced options
-      const fallbackOpts = {
-        backgroundColor: backgroundImage ? "transparent" : bg1,
-        width,
-        height,
-        pixelRatio: scale,
-        quality: type === "png" ? 0.98 : 0.92,
+
+      // Step 1: Draw background (image or gradient/solid)
+      if (backgroundImage) {
+        try {
+          // Load and draw background image directly - no data URL issues
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = () => reject(new Error('Failed to load background image'));
+            img.src = backgroundImage;
+            setTimeout(() => reject(new Error('Image load timeout')), 10000);
+          });
+
+          // Calculate image positioning based on imageFit setting
+          let drawWidth = width;
+          let drawHeight = height;
+          let drawX = 0;
+          let drawY = 0;
+
+          if (imageFit === 'cover') {
+            const imgRatio = img.width / img.height;
+            const canvasRatio = width / height;
+
+            if (imgRatio > canvasRatio) {
+              drawWidth = height * imgRatio;
+              drawX = (width - drawWidth) / 2;
+            } else {
+              drawHeight = width / imgRatio;
+              drawY = (height - drawHeight) / 2;
+            }
+          } else { // contain
+            const imgRatio = img.width / img.height;
+            const canvasRatio = width / height;
+
+            if (imgRatio > canvasRatio) {
+              drawHeight = width / imgRatio;
+              drawY = (height - drawHeight) / 2;
+            } else {
+              drawWidth = height * imgRatio;
+              drawX = (width - drawWidth) / 2;
+            }
+          }
+
+          // Apply corner radius clipping
+          if (radius > 0) {
+            clipRoundedRect(0, 0, width, height, radius);
+          }
+
+          // Draw the background image
+          ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+
+          // Apply dim overlay if needed
+          if (imageDim > 0) {
+            ctx.fillStyle = `rgba(0, 0, 0, ${imageDim})`;
+            ctx.fillRect(0, 0, width, height);
+          }
+
+          if (radius > 0) {
+            ctx.restore();
+          }
+        } catch (imageError) {
+          console.warn('Background image failed to load, using fallback background:', imageError);
+          drawBackground();
+        }
+      } else {
+        drawBackground();
+      }
+
+      function drawBackground() {
+        if (!ctx) return;
+
+        // Apply corner radius clipping for background
+        if (radius > 0) {
+          clipRoundedRect(0, 0, width, height, radius);
+        }
+
+        if (useGradient) {
+          let gradient;
+          if (gradientType === "radial") {
+            gradient = ctx.createRadialGradient(width/2, height/2, 0, width/2, height/2, Math.max(width, height)/2);
+          } else {
+            const angle = (gradientAngle * Math.PI) / 180;
+            const x1 = width/2 - (Math.cos(angle) * width/2);
+            const y1 = height/2 - (Math.sin(angle) * height/2);
+            const x2 = width/2 + (Math.cos(angle) * width/2);
+            const y2 = height/2 + (Math.sin(angle) * height/2);
+            gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+          }
+          gradient.addColorStop(0, bg1);
+          gradient.addColorStop(1, bg2);
+          ctx.fillStyle = gradient;
+        } else {
+          ctx.fillStyle = bg1;
+        }
+        ctx.fillRect(0, 0, width, height);
+
+        if (radius > 0) {
+          ctx.restore();
+        }
+      }
+
+      // Step 2: Draw accent bar
+      ctx.fillStyle = accent;
+      ctx.globalAlpha = 0.5;
+      ctx.fillRect(0, 0, 6, height);
+      ctx.globalAlpha = 1;
+
+      // Step 3: Draw text and optional text box directly on canvas (no html-to-image)
+      ctx.save();
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = fg;
+      ctx.font = `${fontSize}px ${font}`;
+
+      const boxPadding = textBoxOpacity > 0 ? textBoxPadding : 0;
+      const containerWidth = width - 2 * padding;
+      const maxBoxWidth = enableFreePositioning ? Math.round((textBoxWidth / 100) * width) : containerWidth;
+
+      // Word wrap into lines
+      function wrapText(text: string, maxW: number, letterSpace: number) {
+        const lines: string[] = [];
+        const paragraphs = text.split('\n');
+        for (const para of paragraphs) {
+          const words = para.split(/(\s+)/); // keep spaces to preserve spacing
+          let line = '';
+          const measure = (s: string) => {
+            if (!letterSpace) return ctx.measureText(s).width;
+            // approximate letter spacing by adding extra width per character (excluding spaces)
+            const base = ctx.measureText(s).width;
+            const extra = Math.max(0, (Array.from(s).filter(ch => ch !== ' ').length - 1)) * letterSpace;
+            return base + extra;
+          };
+          for (const token of words) {
+            const test = line + token;
+            if (measure(test) <= maxW - 2 * boxPadding || line === '') {
+              line = test;
+            } else {
+              lines.push(line.trimEnd());
+              line = token.trimStart();
+            }
+          }
+          lines.push(line.trimEnd());
+        }
+        return lines;
+      }
+
+      const lines = wrapText(composed, maxBoxWidth, letterSpacing);
+      const lineAdvance = Math.round(fontSize * lineHeight);
+      const textHeight = lines.length * lineAdvance;
+
+      // Compute box rect (x,y,w,h) and text origin based on positioning/alignment
+      let boxX = padding;
+      let boxY = 0;
+      let boxW = maxBoxWidth;
+      let boxH = textHeight + 2 * boxPadding;
+
+      if (enableFreePositioning) {
+        const centerX = width / 2 + (textBoxX - 50) * (width / 100);
+        const centerY = height / 2 + (textBoxY - 50) * (height / 100);
+        boxX = Math.round(centerX - boxW / 2);
+        boxY = Math.round(centerY - boxH / 2);
+        // Keep within bounds
+        boxX = Math.max(0, Math.min(boxX, width - boxW));
+        boxY = Math.max(0, Math.min(boxY, height - boxH));
+      } else {
+        // Vertical align in container
+        const contentH = textHeight;
+        if (verticalAlign === 'top') boxY = padding;
+        else if (verticalAlign === 'bottom') boxY = height - padding - contentH - 2 * boxPadding;
+        else boxY = Math.round((height - contentH) / 2) - boxPadding; // center
+      }
+
+      // Draw text box background if needed
+      const shouldDrawBox = (enableFreePositioning && textBoxOpacity > 0) || (!enableFreePositioning && backgroundImage && textBoxOpacity > 0);
+      if (shouldDrawBox) {
+        ctx.save();
+        clipRoundedRect(boxX, boxY, boxW, boxH, textBoxRadius);
+        ctx.fillStyle = hexToRgba(textBoxBg, textBoxOpacity);
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+        ctx.restore();
+      }
+
+      // Draw lines
+      const drawLine = (text: string, tx: number, ty: number) => {
+        if (letterSpacing === 0) {
+          ctx.fillText(text, tx, ty);
+          return;
+        }
+        // Manual letter-spacing drawing
+        let x = tx;
+        for (const ch of Array.from(text)) {
+          ctx.fillText(ch, x, ty);
+          x += ctx.measureText(ch).width + (ch === ' ' ? 0 : letterSpacing);
+        }
       };
 
-      try {
-        if (type === "png") {
-          const dataUrl = await htmlToImage.toPng(node, fallbackOpts);
-          const a = document.createElement("a");
-          a.href = dataUrl;
-          a.download = `${fileBase}.png`;
-          a.click();
-        } else {
-          const dataUrl = await htmlToImage.toJpeg(node, fallbackOpts);
-          const a = document.createElement("a");
-          a.href = dataUrl;
-          a.download = `${fileBase}.jpg`;
-          a.click();
-        }
-      } catch (fallbackError) {
-        console.error("Fallback export also failed:", fallbackError);
-        alert(`Export failed. ${backgroundImage ? 'Try removing the background image and exporting again, or ' : ''}Please try again or check console for details.`);
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const rawWidth = ctx.measureText(line).width + (letterSpacing ? Math.max(0, (Array.from(line).filter(c => c !== ' ').length - 1)) * letterSpacing : 0);
+        let tx = boxX + boxPadding;
+        if (align === 'center') tx = boxX + (boxW - rawWidth) / 2;
+        else if (align === 'right') tx = boxX + boxW - rawWidth - boxPadding;
+        const ty = boxY + boxPadding + i * lineAdvance;
+        drawLine(line, tx, ty);
       }
+
+      // Draw watermark
+      if (showWatermark) {
+        ctx.font = `${Math.max(14, Math.round(fontSize * 0.33))}px ${font}`;
+        const wm = watermark;
+        const m = ctx.measureText(wm);
+        const wmX = width - 16 - m.width;
+        const wmY = height - 12 - (Math.max(14, Math.round(fontSize * 0.33)));
+        ctx.fillText(wm, wmX, wmY);
+      }
+      ctx.restore();
+
+      // Step 4: Convert canvas to downloadable file
+      const finalDataUrl = canvas.toDataURL(type === 'png' ? 'image/png' : 'image/jpeg', type === 'png' ? 1 : 0.92);
+
+      const a = document.createElement("a");
+      a.href = finalDataUrl;
+      a.download = `${fileBase}.${type}`;
+      a.click();
+
+    } catch (error) {
+      console.error("Canvas export failed:", error);
+      alert('Export failed. Please try again or try a smaller image.');
     }
   }
 
@@ -757,15 +942,14 @@ export default function LinkedInPostStudio() {
     () => {
       const getGradientBackground = () => {
         if (!useGradient) return bg1;
-        
         if (gradientType === "radial") {
           return `radial-gradient(circle, ${bg1}, ${bg2})`;
         } else {
           return `linear-gradient(${gradientAngle}deg, ${bg1}, ${bg2})`;
         }
       };
-      
-      return {
+
+      const base: React.CSSProperties = {
         width: `${ratio.w}px`,
         height: `${ratio.h}px`,
         color: fg,
@@ -773,15 +957,29 @@ export default function LinkedInPostStudio() {
         display: "flex",
         alignItems: verticalAlign === "top" ? "flex-start" : verticalAlign === "bottom" ? "flex-end" : "center",
         justifyContent: align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center",
-        background: getGradientBackground(),
         borderRadius: radius,
-        position: "relative" as const,
-        overflow: "hidden" as const,
+        position: "relative",
+        overflow: "hidden",
         padding: padding,
         boxShadow: "0 20px 60px rgba(0,0,0,.14)",
       };
+
+      const gradientOrSolid = getGradientBackground();
+      if (backgroundImage) {
+        // Use layered CSS background for better html-to-image reliability
+        // First layer (top): uploaded image; Second layer: gradient/solid
+        return {
+          ...base,
+          background: `url(${backgroundImage})${gradientOrSolid ? `, ${gradientOrSolid}` : ""}`,
+          backgroundSize: `${imageFit}, auto`,
+          backgroundPosition: `center, center`,
+          backgroundRepeat: `no-repeat, no-repeat`,
+        };
+      }
+
+      return { ...base, background: gradientOrSolid };
     },
-    [ratio, fg, font, align, verticalAlign, useGradient, gradientType, gradientAngle, bg1, bg2, radius, padding]
+    [ratio, fg, font, align, verticalAlign, useGradient, gradientType, gradientAngle, bg1, bg2, radius, padding, backgroundImage, imageFit]
   );
 
   const textBlockStyle = useMemo(() => {
@@ -1963,24 +2161,7 @@ export default function LinkedInPostStudio() {
                   >
                     <div style={{ transform: `scale(${exportPreviewScale})`, transformOrigin: 'top left' }}>
                       <div ref={stageRef} style={stageStyle}>
-                        {/* Background Image - Using IMG element for better html-to-image compatibility */}
-                        {backgroundImage && (
-                          <img
-                            src={backgroundImage}
-                            alt="Background"
-                            style={{
-                              position: "absolute",
-                              inset: 0,
-                              width: "100%",
-                              height: "100%",
-                              objectFit: imageFit,
-                              objectPosition: "center",
-                              borderRadius: radius,
-                              zIndex: 1,
-                              pointerEvents: "none",
-                            }}
-                          />
-                        )}
+                        {/* Background rendered via CSS (more reliable for export) */}
 
                         {/* Image Dim Overlay */}
                         {backgroundImage && imageDim > 0 && (
