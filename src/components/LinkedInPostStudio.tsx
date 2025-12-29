@@ -409,23 +409,21 @@ export default function LinkedInPostStudio() {
 
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    
-    // Toggle the active style state
-    setActiveStyles(prev => 
-      prev.includes(styleKey) 
-        ? prev.filter(s => s !== styleKey)
-        : [...prev, styleKey]
-    );
-    
+
     if (start === end) {
       // No selection, just toggle the style for future typing
+      setActiveStyles(prev =>
+        prev.includes(styleKey)
+          ? prev.filter(s => s !== styleKey)
+          : [...prev, styleKey]
+      );
       return;
     }
 
     // Get selected text
     const selectedText = raw.substring(start, end);
-    
-    // Check if we're turning the style on or off
+
+    // Check if we're turning the style on or off based on current active styles
     const isActivating = !activeStyles.includes(styleKey);
     
     let newText;
@@ -452,7 +450,11 @@ export default function LinkedInPostStudio() {
     }
     
     setRaw(newText);
-    
+
+    // Clear the active style state after applying formatting to selection
+    // This ensures the button doesn't stay "pressed" after use
+    setActiveStyles(prev => prev.filter(s => s !== styleKey));
+
     // Restore selection
     setTimeout(() => {
       let newLength = selectedText.length;
